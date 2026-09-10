@@ -99,23 +99,14 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     PA9     ------> USART1_TX
     PA10     ------> USART1_RX
     */
-    /* === 关键修复 2026-09-11 ===
-     * 原 bug:PA10(RX)用 AF_PP(推挽输出),STM32 会主动驱动电平,
-     * 把 Pi TX 的信号"吃掉"——这就是为啥不接 STM32 能看到数据、
-     * 接上 STM32 就看不到的根本原因。
-     * 修复:PA9 TX 用 AF_PP(推挽输出),PA10 RX 用 AF_INPUT(输入)。
+    /* === 2026-09-11 恢复 CubeMX 标准配置 ===
+     * 之前改 GPIO_MODE_INPUT 是错的(HAL 不写 AFRH,AF 没设上,USART1_RX
+     * 根本没连到 PA10)。CubeMX 默认 AF_PP 是正确的——RX 引脚在 AF 模式下
+     * 不会被外设主动驱动,USART1 只有 RX(输入)功能,不影响信号。
      */
-    /* PA9 = USART1_TX,推挽输出 */
-    GPIO_InitStruct.Pin = GPIO_PIN_9;
+    GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-    /* PA10 = USART1_RX,输入模式(必须!) */
-    GPIO_InitStruct.Pin = GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;  /* RX 用普通输入 + Alternate 复用 */
-    GPIO_InitStruct.Pull = GPIO_PULLUP;     /* 内部上拉,空闲时保持高电平 */
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
