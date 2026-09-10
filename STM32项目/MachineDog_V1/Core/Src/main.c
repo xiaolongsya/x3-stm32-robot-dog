@@ -87,7 +87,7 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
  *
  * ⚠️ 这是远场近似,实测后需要重新校准 HEIGHT_US_PER_MM 常量。
  */
-#define SERVO_NEUTRAL_US     1500
+#define SERVO_NEUTRAL_US     1530   /* 默认微抬升 ~7.5 mm(原 1500 = 标定基线)*/
 #define SHIN_SERVO_COUNT     4
 #define HEIGHT_US_PER_MM     4    /* 1 mm 身体抬升 ≈ 4 µs PWM 增量(待实测) */
 #define HEIGHT_DELTA_MAX_MM  40   /* 安全上限 ±40 mm */
@@ -104,7 +104,7 @@ static void set_all_shin_pwm(uint16_t pwm) {
   }
 }
 
-/* 应用身体高度增量(相对默认 1500 µs 居中)
+/* 应用身体高度增量(相对默认 SERVO_NEUTRAL_US)
  * delta_mm: 正数 = 抬升, 负数 = 下降
  * 安全检查: PWM 范围 500~2500, 高度限制 ±HEIGHT_DELTA_MAX_MM
  */
@@ -164,7 +164,7 @@ static void parse_uart_command(const char *cmd) {
       printf("ERR id>7\n");
     }
   } else if (strcmp(cmd, "center") == 0) {
-    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, 1500);
+    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
     printf("OK center\n");
   } else {
     /* === 修复 3:加回显便于调试 === */
@@ -216,16 +216,16 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* 标定姿态: 8 路全部居中 (Pulse=1500, 1.5ms, 90°)
-     = 大腿水平 + 小腿垂直 -> 装舵机参考位 */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1500);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1500);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1500);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1500);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1500);
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500);
+  /* 默认姿态: 8 路全部 1530 µs(微抬升 ~7.5 mm,基于 1mm = 4µs 远场近似)
+     = 身体从标定基线提高一点,验证烧录是否生效(用户调试用)*/
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1530);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1530);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1530);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1530);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1530);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1530);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1530);
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1530);
   /* USER CODE END 2 */
 
   while (1)
