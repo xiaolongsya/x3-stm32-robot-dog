@@ -222,18 +222,22 @@ int main(void)
    = 综合:小狗上电后"站起来一点"
    注:角度估算基于 1 µs = 0.09°,仅供参考
  */
-  /* 大腿 4 路(servo1 BR 肩, servo3 FR 肩, servo4 FL 肩, servo6 BL 肩)*逆时针*让身体抬起来
-   * 用户的反馈:+PWM 让大腿往后摆,身体变矮;-PWM(逆时针)让大腿往前摆,身体变高
-   * 所以反方向:1500 -> 1400(−100 µs = ~ −9° 前摆弯曲,让身体抬高)*/
+  /* 大腿 4 路:*右腿*(servo1 BR 肩, servo3 FR 肩)*逆时针*让身体抬起来
+   * *左腿*(servo4 FL 肩, servo6 BL 肩)用户标定时反了,需要 PWM 反向(3000 - pwm)
+   * 用户反馈:+PWM 让大腿往后摆(身体变矮),-PWM 让大腿往前摆(身体变高)
+   */
+  /* 右腿 2 路(servo1 BR 肩, servo3 FR 肩)逆时针 1400 */
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1400);  /* PA3  = TIM2_CH4 = servo1 = BR 肩 */
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1400);  /* PA5  = TIM2_CH1 = servo3 = FR 肩 */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1400);  /* PA6  = TIM3_CH1 = servo4 = FL 肩 */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1400);  /* PB0  = TIM3_CH3 = servo6 = BL 肩 */
-  /* 小腿 4 路(servo0/2/5/7)抬升(用户感觉小,要再大点)*/
+  /* 左腿 2 路(servo4 FL 肩, servo6 BL 肩)PWM 反向(3000 - 1400 = 1600) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1 = servo4 = FL 肩(反向) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1600);  /* PB0  = TIM3_CH3 = servo6 = BL 肩(反向) */
+  /* 小腿:*右腿*(servo0 BR 小腿, servo2 FR 小腿)抬升 1850
+   * *左腿*(servo5 FL 小腿, servo7 BL 小腿)PWM 反向(3000 - 1850 = 1150) */
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1850);  /* PA2  = TIM2_CH3 = servo0 = BR 小腿 */
   __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1850);  /* PA4  = TIM3_CH2 = servo2 = FR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1850); /* PA7  = TIM17_CH1 = servo5 = FL 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1850);  /* PA8  = TIM1_CH1 = servo7 = BL 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1150); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(反向) */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1150);  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(反向) */
   /* USER CODE END 2 */
 
   while (1)
