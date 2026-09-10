@@ -134,24 +134,41 @@ static uint8_t rx_idx = 0;
 static void parse_uart_command(const char *cmd) {
   unsigned int id = 0, pulse = 0;
   int16_t delta = 0;
-  if (sscanf(cmd, "%u %u", &id, &pulse) == 2) {
-    if (id == 99) {  /* "all XXXX" -> 全部舵机 */
-      for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, (uint16_t)pulse);
-      printf("OK all=%u\n", pulse);
-    } else if (id <= 7) {
+  /* === 修复 1:用 strncmp 前置判别 "all" 和 "h"
+   * 原 bug: sscanf("%u %u") 遇到 "all" 返回 0 但不消耗,
+   *         导致 "all 1500" 走 else 分支全失败 → ERR fmt
+   */
+  if (strncmp(cmd, "all ", 4) == 0) {
+    if (sscanf(cmd + 4, "%u", &pulse) == 1) {
+      if (pulse >= 500 && pulse <= 2500) {
+        for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, (uint16_t)pulse);
+        printf("OK all=%u\n", pulse);
+      } else {
+        printf("ERR pulse range\n");
+      }
+    } else {
+      printf("ERR fmt\n");
+    }
+  } else if (cmd[0] == 'h' && cmd[1] == ' ') {
+    /* === 修复 2:h 命令前置判别,避免被 sscanf("%u %u") 拦截 === */
+    if (sscanf(cmd + 2, "%hd", &delta) == 1) {
+      apply_height_delta(delta);
+    } else {
+      printf("ERR fmt\n");
+    }
+  } else if (sscanf(cmd, "%u %u", &id, &pulse) == 2) {
+    if (id <= 7) {
       set_servo_pulse((uint8_t)id, (uint16_t)pulse);
       printf("OK s%u=%u\n", id, pulse);
     } else {
       printf("ERR id>7\n");
     }
-  } else if (sscanf(cmd, "h %hd", &delta) == 1) {
-    /* 身高控制: "h <delta_mm>" */
-    apply_height_delta(delta);
   } else if (strcmp(cmd, "center") == 0) {
     for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, 1500);
     printf("OK center\n");
   } else {
-    printf("ERR fmt\n");
+    /* === 修复 3:加回显便于调试 === */
+    printf("ERR fmt: '%s'\n", cmd);
   }
 }
 

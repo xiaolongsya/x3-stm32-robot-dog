@@ -101,7 +101,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     */
     GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Pull = GPIO_PULLUP;  /* 修复:RX 加内部上拉,防止浮空 */
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
@@ -143,7 +143,9 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 #include <stdio.h>
 
 int fputc(int ch, FILE *f) {
-  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  /* 修复:用 5ms 短超时,避免 printf 死锁卡住主循环接收
+   * 原 HAL_MAX_DELAY 如果 TX 短路会无限等 */
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 5);
   return ch;
 }
 
