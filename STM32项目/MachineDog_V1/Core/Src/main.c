@@ -2,7 +2,7 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : 8 路舵机来回摆动 + UART 状态上报(v1 测试版)
+  * @brief          : 8 路舵机来回摆动 + UART 状态上报 + 身高控制(v1 测试版)
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -48,6 +48,12 @@ void SystemClock_Config(void);
  *  1=PA3=TIM2_CH4=servo1   5=PA7=TIM17_CH1=servo5
  *  2=PA4=TIM3_CH2=servo2   6=PB0=TIM3_CH3=servo6
  *  3=PA5=TIM2_CH1=servo3   7=PA8=TIM1_CH1=servo7
+ *
+ * 腿分布(2026-09-10 用户确认,对称):
+ *  前肩: servo3(FR), servo4(FL)
+ *  前小腿: servo2(FR), servo5(FL)
+ *  后肩: servo1(BR), servo6(BL)
+ *  后小腿: servo0(BR), servo7(BL)
  */
 static void set_servo_pulse(uint8_t id, uint16_t pulse) {
   if (pulse < 500 || pulse > 2500) return;
@@ -63,18 +69,73 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
   }
 }
 
+/* === 身高控制(2026-09-10 新增)==========================================
+ * 几何(用户实测 + 远场近似):
+ *   L_shin = 68 mm,  R_shin = 21.22 mm
+ *   L_shin / R_shin = 3.2 (身体高度变化 / 传动杆端位移)
+ *   θ_servo(小腿舵机,逆时针从狗前面看)= 身体抬升对应方向
+ *   PWM = 500 + (deg/180)*2000
+ *
+ * 简化公式(远场近似):
+ *   Δh ≈ (L_shin / R_shin) × ds ≈ 3.2 × ds (mm)
+ *   ds ≈ R_servo × sin θ_s ≈ 50.14 × sin θ_s
+ *   => Δh ≈ 3.2 × 50.14 × sin θ_s ≈ 160 × sin θ_s (mm)
+ *   => sin θ_s ≈ Δh / 160
+ *
+ *   1 mm 身体抬升 => sin θ_s ≈ 0.00625 => θ_s ≈ 0.358° (≈ 4 µs PWM 增量)
+ *   所以 1 mm 身体抬升 ≈ 4 µs PWM 增量
+ *
+ * ⚠️ 这是远场近似,实测后需要重新校准 HEIGHT_US_PER_MM 常量。
+ */
+#define SERVO_NEUTRAL_US     1500
+#define SHIN_SERVO_COUNT     4
+#define HEIGHT_US_PER_MM     4    /* 1 mm 身体抬升 ≈ 4 µs PWM 增量(待实测) */
+#define HEIGHT_DELTA_MAX_MM  40   /* 安全上限 ±40 mm */
+
+/* 4 路小腿舵机的 servo 编号: 0=BR, 2=FR, 5=FL, 7=BL */
+static const uint8_t SHIN_SERVO_IDS[SHIN_SERVO_COUNT] = {0, 2, 5, 7};
+static uint16_t shin_pwm_state[SHIN_SERVO_COUNT] = {1500, 1500, 1500, 1500};
+
+/* 设置 4 路小腿舵机同步(只动小腿,肩部舵机不动) */
+static void set_all_shin_pwm(uint16_t pwm) {
+  for (uint8_t i = 0; i < SHIN_SERVO_COUNT; i++) {
+    set_servo_pulse(SHIN_SERVO_IDS[i], pwm);
+    shin_pwm_state[i] = pwm;
+  }
+}
+
+/* 应用身体高度增量(相对默认 1500 µs 居中)
+ * delta_mm: 正数 = 抬升, 负数 = 下降
+ * 安全检查: PWM 范围 500~2500, 高度限制 ±HEIGHT_DELTA_MAX_MM
+ */
+static void apply_height_delta(int16_t delta_mm) {
+  /* 安全范围检查 */
+  if (delta_mm > HEIGHT_DELTA_MAX_MM) delta_mm = HEIGHT_DELTA_MAX_MM;
+  if (delta_mm < -HEIGHT_DELTA_MAX_MM) delta_mm = -HEIGHT_DELTA_MAX_MM;
+  int32_t pwm = (int32_t)SERVO_NEUTRAL_US + (int32_t)delta_mm * HEIGHT_US_PER_MM;
+  if (pwm < 500) pwm = 500;
+  if (pwm > 2500) pwm = 2500;
+  set_all_shin_pwm((uint16_t)pwm);
+  printf("OK dh=%dmm -> shin_pwm=%lu (servo0/2/5/7)\n",
+         delta_mm, (unsigned long)pwm);
+}
+
 /* UART 接收命令解析:
- * 格式: "<servo_id> <pulse>\n"  例如 "0 1500\n" → 设 servo0=1500
- *       "all <pulse>\n"           设全部 8 路
- *       "center\n"                设全部 1500 (居中)
+ * 格式: "<servo_id> <pulse>\n"  例如 "0 1500\n" -> 设 servo0=1500
+ *       "all <pulse>\n"          设全部 8 路(保留旧命令)
+ *       "center\n"               设全部 1500 (居中,保留旧命令)
+ *       "h <delta_mm>\n"         设身体高度增量(新增,2026-09-10)
+ *                                 例: "h 15\n"  -> 抬升 15 mm
+ *                                     "h -10\n" -> 下降 10 mm
  */
 static char rx_buf[32];
 static uint8_t rx_idx = 0;
 
 static void parse_uart_command(const char *cmd) {
   unsigned int id = 0, pulse = 0;
+  int16_t delta = 0;
   if (sscanf(cmd, "%u %u", &id, &pulse) == 2) {
-    if (id == 99) {  /* "all XXXX" → 全部舵机 */
+    if (id == 99) {  /* "all XXXX" -> 全部舵机 */
       for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, (uint16_t)pulse);
       printf("OK all=%u\n", pulse);
     } else if (id <= 7) {
@@ -83,6 +144,9 @@ static void parse_uart_command(const char *cmd) {
     } else {
       printf("ERR id>7\n");
     }
+  } else if (sscanf(cmd, "h %hd", &delta) == 1) {
+    /* 身高控制: "h <delta_mm>" */
+    apply_height_delta(delta);
   } else if (strcmp(cmd, "center") == 0) {
     for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, 1500);
     printf("OK center\n");
@@ -125,7 +189,7 @@ int main(void)
   MX_USART1_UART_Init();
 
   /* USER CODE BEGIN 2 */
-  /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit → 必须手动启动 HAL_TIM_PWM_Start */
+  /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit -> 必须手动启动 HAL_TIM_PWM_Start */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);    /* PA8  = TIM1_CH1 = servo7 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);    /* PA5  = TIM2_CH1 = servo3 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);    /* PA2  = TIM2_CH3 = servo0 */
@@ -136,7 +200,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
   /* 标定姿态: 8 路全部居中 (Pulse=1500, 1.5ms, 90°)
-     = 大腿水平 + 小腿垂直 → 装舵机参考位 */
+     = 大腿水平 + 小腿垂直 -> 装舵机参考位 */
   __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1500);
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1500);
@@ -151,7 +215,7 @@ int main(void)
   {
     /* USER CODE BEGIN 3 */
     /* UART 接收 Pi 命令(轮询,10ms 内响应)
-     * 命令: "<id> <pulse>\n" / "all <pulse>\n" / "center\n"
+     * 命令: "<id> <pulse>\n" / "all <pulse>\n" / "center\n" / "h <delta_mm>\n"
      */
     uart_poll();
     HAL_Delay(10);

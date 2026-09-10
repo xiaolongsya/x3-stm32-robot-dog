@@ -88,7 +88,6 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 
 ## 🙏 Acknowledgments
 
-- love-bot v2 project — prior art and many lessons learned (see `../love-bot项目/`)
 - STM32 / MPU6050 / SSD1306 / LM2596 datasheets and reference designs
 - Open-source community
 
