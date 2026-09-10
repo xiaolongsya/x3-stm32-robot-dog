@@ -16,6 +16,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,6 +43,68 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* 8 路舵机映射表 (servo_id 0-7):
+ *  0=PA2=TIM2_CH3=servo0   4=PA6=TIM3_CH1=servo4
+ *  1=PA3=TIM2_CH4=servo1   5=PA7=TIM17_CH1=servo5
+ *  2=PA4=TIM3_CH2=servo2   6=PB0=TIM3_CH3=servo6
+ *  3=PA5=TIM2_CH1=servo3   7=PA8=TIM1_CH1=servo7
+ */
+static void set_servo_pulse(uint8_t id, uint16_t pulse) {
+  if (pulse < 500 || pulse > 2500) return;
+  switch (id) {
+    case 0: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, pulse); break;
+    case 1: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pulse); break;
+    case 2: __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pulse); break;
+    case 3: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse); break;
+    case 4: __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pulse); break;
+    case 5: __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, pulse); break;
+    case 6: __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, pulse); break;
+    case 7: __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, pulse); break;
+  }
+}
+
+/* UART 接收命令解析:
+ * 格式: "<servo_id> <pulse>\n"  例如 "0 1500\n" → 设 servo0=1500
+ *       "all <pulse>\n"           设全部 8 路
+ *       "center\n"                设全部 1500 (居中)
+ */
+static char rx_buf[32];
+static uint8_t rx_idx = 0;
+
+static void parse_uart_command(const char *cmd) {
+  unsigned int id = 0, pulse = 0;
+  if (sscanf(cmd, "%u %u", &id, &pulse) == 2) {
+    if (id == 99) {  /* "all XXXX" → 全部舵机 */
+      for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, (uint16_t)pulse);
+      printf("OK all=%u\n", pulse);
+    } else if (id <= 7) {
+      set_servo_pulse((uint8_t)id, (uint16_t)pulse);
+      printf("OK s%u=%u\n", id, pulse);
+    } else {
+      printf("ERR id>7\n");
+    }
+  } else if (strcmp(cmd, "center") == 0) {
+    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, 1500);
+    printf("OK center\n");
+  } else {
+    printf("ERR fmt\n");
+  }
+}
+
+static void uart_poll(void) {
+  uint8_t c;
+  if (HAL_UART_Receive(&huart1, &c, 1, 0) == HAL_OK) {
+    if (c == '\n' || c == '\r') {
+      if (rx_idx > 0) {
+        rx_buf[rx_idx] = 0;
+        parse_uart_command(rx_buf);
+        rx_idx = 0;
+      }
+    } else if (rx_idx < sizeof(rx_buf) - 1) {
+      rx_buf[rx_idx++] = c;
+    }
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -71,56 +134,27 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);    /* PA4  = TIM3_CH2 = servo2 */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
+
+  /* 标定姿态: 8 路全部居中 (Pulse=1500, 1.5ms, 90°)
+     = 大腿水平 + 小腿垂直 → 装舵机参考位 */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1500);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1500);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1500);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1500);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1500);
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500);
   /* USER CODE END 2 */
 
   while (1)
   {
     /* USER CODE BEGIN 3 */
-    /* 8 路舵机来回摆动:右 → 中 → 左 → 中 (各 800ms) */
-
-    /* 右侧 2000 (2.0ms = +90°) */
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 2000);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 2000);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 2000);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 2000);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 2000);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 2000);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 2000);
-    __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 2000);
-    HAL_Delay(800);
-
-    /* 中位 1500 */
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1500);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1500);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1500);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1500);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1500);
-    __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500);
-    HAL_Delay(800);
-
-    /* 左侧 1000 */
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1000);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1000);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1000);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1000);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1000);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1000);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1000);
-    __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1000);
-    HAL_Delay(800);
-
-    /* 再回中位 1500 */
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1500);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1500);
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1500);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1500);
-    __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1500);
-    __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500);
-    HAL_Delay(800);
+    /* UART 接收 Pi 命令(轮询,10ms 内响应)
+     * 命令: "<id> <pulse>\n" / "all <pulse>\n" / "center\n"
+     */
+    uart_poll();
+    HAL_Delay(10);
     /* USER CODE END 3 */
   }
 }
