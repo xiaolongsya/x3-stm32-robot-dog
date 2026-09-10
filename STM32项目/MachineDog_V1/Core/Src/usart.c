@@ -114,8 +114,8 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
     /* PA10 = USART1_RX,输入模式(必须!) */
     GPIO_InitStruct.Pin = GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_INPUT;
-    GPIO_InitStruct.Pull = GPIO_PULLUP;  /* 内部上拉,空闲时保持高电平 */
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;  /* RX 用普通输入 + Alternate 复用 */
+    GPIO_InitStruct.Pull = GPIO_PULLUP;     /* 内部上拉,空闲时保持高电平 */
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
