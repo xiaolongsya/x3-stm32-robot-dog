@@ -87,7 +87,7 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
  *
  * ⚠️ 这是远场近似,实测后需要重新校准 HEIGHT_US_PER_MM 常量。
  */
-#define SERVO_NEUTRAL_US     1530   /* 默认微抬升 ~7.5 mm(原 1500 = 标定基线)*/
+#define SERVO_NEUTRAL_US     1580   /* 默认站起来一点 ~20 mm(原 1500 = 标定基线)*/
 #define SHIN_SERVO_COUNT     4
 #define HEIGHT_US_PER_MM     4    /* 1 mm 身体抬升 ≈ 4 µs PWM 增量(待实测) */
 #define HEIGHT_DELTA_MAX_MM  40   /* 安全上限 ±40 mm */
@@ -216,16 +216,16 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* 默认姿态: 8 路全部 1530 µs(微抬升 ~7.5 mm,基于 1mm = 4µs 远场近似)
+  /* 默认姿态: 8 路全部 1580 µs(抬升 ~20 mm,基于 1mm = 4µs 远场近似)
      = 身体从标定基线提高一点,验证烧录是否生效(用户调试用)*/
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1530);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1530);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1530);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1530);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1530);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1530);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1530);
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1530);
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1580);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1580);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1580);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1580);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1580);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1580);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1580);
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1580);
   /* USER CODE END 2 */
 
   while (1)
