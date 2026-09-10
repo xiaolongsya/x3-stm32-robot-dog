@@ -137,5 +137,15 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 
 /* USER CODE BEGIN 1 */
 
+/* === 2026-09-10 printf 重定向到 USART1 ===
+ * 默认 printf 走 SWO/ITM,需要 fputc 重定向到 UART
+ */
+#include <stdio.h>
+
+int fputc(int ch, FILE *f) {
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
+
 /* USER CODE END 1 */
 
