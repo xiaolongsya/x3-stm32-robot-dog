@@ -103,11 +103,23 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 | STM32 Firmware | 🔧 I2C 扫描 + 8 路 PWM 来回测试通过,Pi UART 待接 |
 | Pi Agent Software | ⏳ Pending |
 
-### v1 板子当前状态(2026-09-07)
+### v1 板子当前状态(2026-09-09)
 
-- **旧板子退役**:调试过程中经历 LQFP-32 虚焊、ST-Link 反向供电、洗板未彻底烘干等问题,最后1A 短路烤了一阵子,内部可能已伤,用户决定重焊新板子
-- **新板子**:目视查脚 + 断电通断档 + 限流500mA 空载上电 + I2C 扫描验证——按这个 SOP 走,详情见 `machine-dog-v1-feedback.md`(AI 沉淀,本地记忆)
-- **固件进度**:`c:/Users/17402/Desktop/stm32项目/machine_dog_v1/Core/Src/main.c` 当前是 **8 路舵机来回测试** 版本(I2C 扫描也已验证)
+- **二次焊接完成**:补焊 NRST 复位电路后,上电即跑(无需每次按 Reset)
+- **8 路舵机标定完成**:全部居中 (Pulse=1500, 90°) → 大腿水平 + 小腿垂直 (从 py-apple-dynamics 借鉴)
+- **固件进度**:
+ - STM32CubeMX 8 外设配齐 (TIM1/2/3/17 × 8 路 PWM + I2C1 + USART1 + SWD)
+ - SYSCLK = 168 MHz (HSE 8MHz × PLL ×42 / 2)
+ - 修复 3 个 bug: TIM17 Pulse=0 / HAL_TIM_PWM_Start 漏调 / NRST 虚焊
+ - main.c 加 UART 接收 Pi 命令接口 (命令格式见 CLAUDE.md)
+- **commit 节点**:
+ - `288b487` v1 PCB 8路舵机驱动验证(里程碑)
+ - `faf46d0` 8路舵机标定 + UART 接收 Pi 命令接口
+- **待办**:
+ - Pi 接好 SD 卡后,测试 Pi → STM32 UART 通信
+ - 移植 IK (PA_ATTITUDE.cal_ges + PA_IK.ik) 到 STM32,实现身高控制
+ - 移植 PA_GAIT.trot/walk 步态
+ - I2C 读 MPU-6500 IMU 数据(调试器读有干扰,实际应用应正常)
 
 ---
 
