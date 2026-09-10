@@ -232,12 +232,17 @@ int main(void)
   /* 左腿 2 路(servo4 FL 肩, servo6 BL 肩)PWM 反向(3000 - 1400 = 1600) */
   __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1 = servo4 = FL 肩(反向) */
   __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1600);  /* PB0  = TIM3_CH3 = servo6 = BL 肩(反向) */
-  /* 小腿:*右腿*(servo0 BR 小腿, servo2 FR 小腿)抬升 1850
-   * *左腿*(servo5 FL 小腿, servo7 BL 小腿)PWM 反向(3000 - 1850 = 1150) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1850);  /* PA2  = TIM2_CH3 = servo0 = BR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1850);  /* PA4  = TIM3_CH2 = servo2 = FR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1150); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(反向) */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1150);  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(反向) */
+  /* 小腿调整:用户反馈'站不住,后仰'
+   * 修复:前腿降一点(1800),后腿升一点(1950),形成前低后高,平衡身体
+   * *右腿*(servo0 BR, servo2 FR)按腿分前后
+   * *左腿*(servo5 FL, servo7 BL)PWM 反向(3000 - pwm)
+   */
+  /* 前腿小腿(FR/FL)降一点:1800(右前)/1200(左前反向)*/
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1800);  /* PA4  = TIM3_CH2 = servo2 = FR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1200); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(反向) */
+  /* 后腿小腿(BR/BL)升一点:1950(右后)/1050(左后反向)*/
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1950);  /* PA2  = TIM2_CH3 = servo0 = BR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1050);  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(反向) */
   /* USER CODE END 2 */
 
   while (1)
