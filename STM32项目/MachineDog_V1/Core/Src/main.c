@@ -87,7 +87,7 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
  *
  * ⚠️ 这是远场近似,实测后需要重新校准 HEIGHT_US_PER_MM 常量。
  */
-#define SERVO_NEUTRAL_US     1580   /* 默认站起来一点 ~20 mm(原 1500 = 标定基线)*/
+#define SERVO_NEUTRAL_US     1640   /* 默认站起来 ~35 mm(原 1500 = 标定基线)*/
 #define SHIN_SERVO_COUNT     4
 #define HEIGHT_US_PER_MM     4    /* 1 mm 身体抬升 ≈ 4 µs PWM 增量(待实测) */
 #define HEIGHT_DELTA_MAX_MM  40   /* 安全上限 ±40 mm */
@@ -216,16 +216,22 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* 默认姿态: 8 路全部 1580 µs(抬升 ~20 mm,基于 1mm = 4µs 远场近似)
-     = 身体从标定基线提高一点,验证烧录是否生效(用户调试用)*/
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1580);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1580);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1580);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1580);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1580);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1580);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1580);
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1580);
+  /* 默认姿态(2026-09-11):
+   - 4 路大腿舵机(servo1/3/4/6)顺时针前倾一点 1530 µs(+30 µs ~ +7.5° 顺时针)
+   - 4 路小腿舵机(servo0/2/5/7)抬升 1640 µs(+140 µs ~ +35 mm 身体抬升)
+   = 综合:小狗上电后"站起来一点"
+   注:角度估算基于 1 µs = 0.09°,仅供参考
+ */
+  /* 大腿 4 路(servo1 BR 肩, servo3 FR 肩, servo4 FL 肩, servo6 BL 肩)顺时针 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1530);  /* PA3  = TIM2_CH4 = servo1 = BR 肩 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1530);  /* PA5  = TIM2_CH1 = servo3 = FR 肩 */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1530);  /* PA6  = TIM3_CH1 = servo4 = FL 肩 */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1530);  /* PB0  = TIM3_CH3 = servo6 = BL 肩 */
+  /* 小腿 4 路(servo0/2/5/7)抬升 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1640);  /* PA2  = TIM2_CH3 = servo0 = BR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1640);  /* PA4  = TIM3_CH2 = servo2 = FR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1640); /* PA7  = TIM17_CH1 = servo5 = FL 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1640);  /* PA8  = TIM1_CH1 = servo7 = BL 小腿 */
   /* USER CODE END 2 */
 
   while (1)
