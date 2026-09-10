@@ -205,6 +205,20 @@ int main(void)
   MX_TIM17_Init();
   MX_USART1_UART_Init();
 
+  /* === 关键修复 2026-09-11 ===
+   * 强制把 PA10 (USART1_RX) 配成输入模式 + 上拉。
+   * 不依赖 HAL / CubeMX 默认配置,因为 AF_PP 会让 STM32 主动
+   * 驱动 PA10 电平,直接"吃掉" Pi TX 的信号。
+   */
+  {
+    GPIO_InitTypeDef gpio = {0};
+    gpio.Pin = GPIO_PIN_10;
+    gpio.Mode = GPIO_MODE_INPUT;
+    gpio.Pull = GPIO_PULLUP;
+    gpio.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOA, &gpio);
+  }
+
   /* USER CODE BEGIN 2 */
   /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit -> 必须手动启动 HAL_TIM_PWM_Start */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);    /* PA8  = TIM1_CH1 = servo7 */
