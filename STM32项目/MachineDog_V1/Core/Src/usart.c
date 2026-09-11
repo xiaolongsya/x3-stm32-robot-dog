@@ -139,6 +139,10 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 
 /* === 2026-09-10 printf 重定向到 USART1 ===
  * 默认 printf 走 SWO/ITM,需要 fputc 重定向到 UART
+ *
+ * 2026-09-11 修复:同时实现 fputc 和 __io_putchar
+ *   ARM GCC newlib 的 printf 实际走 syscalls.c::_write → __io_putchar(weak)
+ *   之前只实现 fputc 时,printf 输出被吞,Pi 端 readline 永远等不到回包
  */
 #include <stdio.h>
 
@@ -146,6 +150,13 @@ int fputc(int ch, FILE *f) {
   /* 改回 HAL_MAX_DELAY:之前 5ms 短超时导致字符丢失
    * Pi 端收到的是断裂的字符串,readline 永远等不到 \n
    * HAL_MAX_DELAY 不会真死锁(USART TX 16 字节 buffer 瞬间可写) */
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  return ch;
+}
+
+/* syscalls.c::_write 调 __io_putchar(weak),printf 实际走这条路
+ * 必须实现,否则 printf 输出被吞 */
+int __io_putchar(int ch) {
   HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
   return ch;
 }
