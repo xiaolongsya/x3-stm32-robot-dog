@@ -61,19 +61,19 @@ extern "C" {
  * ==================================================================== */
 
 /* --- 前左腿 FL --- */
-#define SERVO_SHOULDER_FL_STAND   1620  /* 左前肩:PA6/TIM3_CH1/servo4  ↑身体高 / ↓身体低 */
-#define SERVO_SHIN_FL_STAND       1400  /* 左前小腿:PA7/TIM17_CH1/servo5 ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_FL_STAND   1820  /* 左前肩:PA6/TIM3_CH1/servo4  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_FL_STAND       1500  /* 左前小腿:PA7/TIM17_CH1/servo5 ↑身体高 / ↓身体低 */
 
 /* --- 前右腿 FR --- */
-#define SERVO_SHOULDER_FR_STAND   1300  /* 右前肩:PA5/TIM2_CH1/servo3  ↑身体高 / ↓身体低 */
-#define SERVO_SHIN_FR_STAND       1600  /* 右前小腿:PA4/TIM3_CH2/servo2 ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_FR_STAND   1200  /* 右前肩:PA5/TIM2_CH1/servo3  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_FR_STAND       1500  /* 右前小腿:PA4/TIM3_CH2/servo2 ↑身体高 / ↓身体低 */
 
 /* --- 后左腿 BL --- */
-#define SERVO_SHOULDER_BL_STAND   1750  /* 左后肩:PB0/TIM3_CH3/servo6  ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_BL_STAND   1850  /* 左后肩:PB0/TIM3_CH3/servo6  ↑身体高 / ↓身体低 */
 #define SERVO_SHIN_BL_STAND       1400  /* 左后小腿:PA8/TIM1_CH1/servo7 ↑身体高 / ↓身体低 */
 
 /* --- 后右腿 BR --- */
-#define SERVO_SHOULDER_BR_STAND   1200  /* 右后肩:PA3/TIM2_CH4/servo1  ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_BR_STAND   1150  /* 右后肩:PA3/TIM2_CH4/servo1  ↑身体高 / ↓身体低 */
 #define SERVO_SHIN_BR_STAND       1600  /* 右后小腿:PA2/TIM2_CH3/servo0 ↑身体高 / ↓身体低 */
 
 /* === 标定基线(center 命令使用)== */
