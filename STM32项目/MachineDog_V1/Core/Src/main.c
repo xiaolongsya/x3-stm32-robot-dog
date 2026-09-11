@@ -216,25 +216,25 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* === 默认站立姿态(2026-09-11 标定后)===
-   * 用户实测反馈(从舵机后方看):
-   *   右腿小腿:顺时针(PWM 减小)→ 抬升身体
-   *   右腿肩部:逆时针(PWM 增大)→ 弯曲腿
-   *   左腿小腿:逆时针(PWM 增大)→ 抬升身体(左舵机反装)
-   *   左腿肩部:顺时针(PWM 减小)→ 弯曲腿(左舵机反装)
-   * = 综合:小狗'站起来一点'
+  /* === 默认站立姿态(2026-09-11 标定后第三次调)===
+   * 用户最新要求:'站不起来,主要是小腿太平了,前后都一样'
+   * = 小腿弯曲不够,需要加大;后腿多提高
+   * 用户方向(从舵机后方看):
+   *   右腿:顺时针(PWM 减小)→ 弯曲+抬升
+   *   左腿:逆时针(PWM 增大)→ 弯曲+抬升(左舵机反装)
    *
-   * 右腿 4 路:PWM 1400(−100 µs,顺时针)
-   * 左腿 4 路:PWM 1600(+100 µs,逆时针)
+   * 设计(从 1500 基线出发,后腿幅度大):
+   *   前腿(servo2/3 FR, servo4/5 FL):肩 ±100,小腿 −50/+50(前腿不弯太多)
+   *   后腿(servo0/1 BR, servo6/7 BL):肩 ±200,小腿 −200/+200(后腿大幅弯)
    */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1800);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿(左,+300 后腿大) */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1700);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿(左,+200 后腿大) */
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1400);  /* PA5  = TIM2_CH1  = servo3 = FR 肩 (右,−100) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1200);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿(右,−300 后腿大) */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1300);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿(右,−200 后腿大) */
   __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1300);  /* PA3  = TIM2_CH4  = servo1 = BR 肩 (右,−200 后腿大) */
   __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1  = servo4 = FL 肩 (左,+100) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1300);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿(右,−200) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1450);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿(右,−50 前腿小) */
   __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1700);  /* PB0  = TIM3_CH3  = servo6 = BL 肩 (左,+200 后腿大) */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1700); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(左,+200) */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1550); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(左,+50 前腿小) */
   /* USER CODE END 2 */
 
   while (1)
