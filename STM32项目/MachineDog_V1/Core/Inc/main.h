@@ -41,22 +41,42 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
-/* === 8 路舵机 STAND PWM(2026-09-11,从 main.c 移到这里)===
- * 默认值(可由 UART `cal save` 在运行时覆盖)
- * 索引按 servo_id 0-7:BR小腿/BR肩/FR小腿/FR肩/FL肩/FL小腿/BL肩/BL小腿
- */
-/* 4 路肩部舵机(180 度范围 500-2500) */
-#define SERVO_SHOULDER_BR_STAND   1200  /* PA3  = TIM2_CH4 = servo1 = BR 肩(−300 弯曲)*/
-#define SERVO_SHOULDER_FR_STAND   1300  /* PA5  = TIM2_CH1 = servo3 = FR 肩(−200 弯曲)*/
-#define SERVO_SHOULDER_FL_STAND   1620  /* PA6  = TIM3_CH1 = servo4 = FL 肩(+120 弯曲)*/
-#define SERVO_SHOULDER_BL_STAND   1750  /* PB0  = TIM3_CH3 = servo6 = BL 肩(+250 弯曲)*/
-/* 4 路小腿舵机 */
-#define SERVO_SHIN_BR_STAND        1600  /* PA2  = TIM2_CH3 = servo0 = BR 小腿(+100 抬升)*/
-#define SERVO_SHIN_FR_STAND        1600  /* PA4  = TIM3_CH2 = servo2 = FR 小腿(+100 抬升)*/
-#define SERVO_SHIN_FL_STAND        1400  /* PA7  = TIM17_CH1 = servo5 = FL 小腿(−100 抬升)*/
-#define SERVO_SHIN_BL_STAND        1400  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(−100 抬升)*/
 
-/* === 标定基线(center 命令使用)=== */
+/* ====================================================================
+ * 8 路舵机 STAND PWM 标定参数(2026-09-11,放顶部方便改)
+ * ====================================================================
+ * 标定目标: 大腿垂直地面 + 小腿水平向前(4 条腿都满足)
+ * 可由 UART `cal save` 在运行时覆盖(无需重编译)
+ *
+ * PWM 方向影响(从舵机后方看):
+ *   肩部 PWM 增大 → 大腿向后摆 → 身体变低
+ *   肩部 PWM 减小 → 大腿向前摆 → 身体变高
+ *   小腿 PWM 增大 → 小腿向上抬 → 身体变高
+ *   小腿 PWM 减小 → 小腿向下落 → 身体变低
+ *
+ * 命名: SERVO_[部位]_[前后]_STAND(左/右 × 前/后 × 肩/小腿)
+ *   FL = 前左(Front Left),   FR = 前右(Front Right)
+ *   BL = 后左(Back Left),    BR = 后右(Back Right)
+ *   肩部 = 大腿舵机,   小腿 = 小腿舵机
+ * ==================================================================== */
+
+/* --- 前左腿 FL --- */
+#define SERVO_SHOULDER_FL_STAND   1620  /* 左前肩:PA6/TIM3_CH1/servo4  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_FL_STAND       1400  /* 左前小腿:PA7/TIM17_CH1/servo5 ↑身体高 / ↓身体低 */
+
+/* --- 前右腿 FR --- */
+#define SERVO_SHOULDER_FR_STAND   1300  /* 右前肩:PA5/TIM2_CH1/servo3  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_FR_STAND       1600  /* 右前小腿:PA4/TIM3_CH2/servo2 ↑身体高 / ↓身体低 */
+
+/* --- 后左腿 BL --- */
+#define SERVO_SHOULDER_BL_STAND   1750  /* 左后肩:PB0/TIM3_CH3/servo6  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_BL_STAND       1400  /* 左后小腿:PA8/TIM1_CH1/servo7 ↑身体高 / ↓身体低 */
+
+/* --- 后右腿 BR --- */
+#define SERVO_SHOULDER_BR_STAND   1200  /* 右后肩:PA3/TIM2_CH4/servo1  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_BR_STAND       1600  /* 右后小腿:PA2/TIM2_CH3/servo0 ↑身体高 / ↓身体低 */
+
+/* === 标定基线(center 命令使用)== */
 #define SERVO_NEUTRAL_US   1500
 /* USER CODE END EC */
 
@@ -67,9 +87,6 @@ extern "C" {
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
-
-/* 8 路舵机 PWM 输出(给 gait.c 用) */
-void set_servo_pulse(uint8_t id, uint16_t pulse);
 
 /* USER CODE BEGIN EFP */
 
