@@ -99,7 +99,7 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 | v1 PCB Layout | ✅ Complete (3 轮审查通过,0 阻断) |
 | v1 Fabrication | ✅ Complete |
 | v1 Board Bring-up | 🔧 In progress (新板子焊接中,旧板子调试损伤退役) |
-| STM32 Firmware | 🔧 I2C 扫描 + 8 路 PWM 来回测试通过,Pi UART 待接 |
+| STM32 Firmware | ✅ 站立姿态 + UART 命令接口(stand/center/all/<id>);蹲下+身高控制已弃用 |
 | Pi Agent Software | ⏳ Pending |
 
 ### v1 板子当前状态(2026-09-09)
@@ -114,10 +114,13 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 - **commit 节点**:
  - `288b487` v1 PCB 8路舵机驱动验证(里程碑)
  - `faf46d0` 8路舵机标定 + UART 接收 Pi 命令接口
+- **当前 UART 命令**(2026-09-11):
+ - `<id> <pulse>` 设单路舵机(0-7)、`all <pulse>` 设全部 8 路、`center` 设全部 1500(标定基线)、`stand` 设站立姿态
+- **已弃用(2026-09-11)**:
+ - `sit` 蹲下姿态 — 对平衡性和舵机能力要求较高,偶尔卡死起不来,有风险先放弃
+ - `h <delta_mm>` 身高控制 — 依赖 sit,一并删除;代码详见 git 历史 `feat(stm32):站立/蹲下姿态 + sit/stand UART 命令(2026-09-11)`
 - **待办**:
- - Pi 接好 SD 卡后,测试 Pi → STM32 UART 通信
- - 移植 IK (PA_ATTITUDE.cal_ges + PA_IK.ik) 到 STM32,实现身高控制
- - 移植 PA_GAIT.trot/walk 步态
+ - 移植 PA_GAIT.trot 踏步动作(x_target=0 即原地踏步)
  - I2C 读 MPU-6500 IMU 数据(调试器读有干扰,实际应用应正常)
 
 ---

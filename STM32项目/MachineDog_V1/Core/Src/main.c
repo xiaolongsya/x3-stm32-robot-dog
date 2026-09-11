@@ -56,20 +56,9 @@
 #define SERVO_SHIN_FR_STAND        1600  /* PA4  = TIM3_CH2 = servo2 = FR 小腿(+100 抬升)*/
 #define SERVO_SHIN_FL_STAND        1400  /* PA7  = TIM17_CH1 = servo5 = FL 小腿(−100 抬升)*/
 #define SERVO_SHIN_BL_STAND        1400  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(−100 抬升)*/
-/* === 蹲下姿态(2026-09-11)===
- * 算法:每条腿朝 1500 方向移动 100(站立 ±100 朝中)
- * 效果:小腿全回中(腿伸直),肩部偏移减少(少弯曲)= 蹲下姿态
- */
-/* 4 路肩部舵机(蹲下) */
-#define SERVO_SHOULDER_BR_SIT     1300  /* +100 朝中(−300 → −200) */
-#define SERVO_SHOULDER_FR_SIT     1400  /* +100 朝中(−200 → −100) */
-#define SERVO_SHOULDER_FL_SIT     1520  /* −100 朝中(+120 → +20) */
-#define SERVO_SHOULDER_BL_SIT     1650  /* −100 朝中(+250 → +150) */
-/* 4 路小腿舵机(蹲下全回中 1500) */
-#define SERVO_SHIN_BR_SIT          1500  /* −100(回中)*/
-#define SERVO_SHIN_FR_SIT          1500  /* −100(回中)*/
-#define SERVO_SHIN_FL_SIT          1500  /* +100(回中)*/
-#define SERVO_SHIN_BL_SIT          1500  /* +100(回中)*/
+/* 2026-09-11 清理:删除蹲下姿态(SERVO_*_SIT)、身高控制(SERVO_NEUTRAL_US 不再用于身高)。
+ * 原因:对平衡性和舵机能力要求较高,蹲下起立动作偶尔卡死起不来,有风险,先放弃。
+ * 后续要恢复:git log 找 "feat(stm32):站立/蹲下姿态" 提交(2026-09-11),恢复常量和函数即可。*/
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -105,75 +94,27 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
   }
 }
 
-/* === 身高控制(2026-09-10 新增)==========================================
- * 几何(用户实测 + 远场近似):
- *   L_shin = 68 mm,  R_shin = 21.22 mm
- *   L_shin / R_shin = 3.2 (身体高度变化 / 传动杆端位移)
- *   θ_servo(小腿舵机,逆时针从狗前面看)= 身体抬升对应方向
- *   PWM = 500 + (deg/180)*2000
- *
- * 简化公式(远场近似):
- *   Δh ≈ (L_shin / R_shin) × ds ≈ 3.2 × ds (mm)
- *   ds ≈ R_servo × sin θ_s ≈ 50.14 × sin θ_s
- *   => Δh ≈ 3.2 × 50.14 × sin θ_s ≈ 160 × sin θ_s (mm)
- *   => sin θ_s ≈ Δh / 160
- *
- *   1 mm 身体抬升 => sin θ_s ≈ 0.00625 => θ_s ≈ 0.358° (≈ 4 µs PWM 增量)
- *   所以 1 mm 身体抬升 ≈ 4 µs PWM 增量
- *
- * ⚠️ 这是远场近似,实测后需要重新校准 HEIGHT_US_PER_MM 常量。
+/* === 标定基线(2026-09-11 保留)===
+ * center 命令:把全部 8 路舵机设到 SERVO_NEUTRAL_US(1500µs = 90°)
+ * 这是舵机标定的中立位,所有 STAND 偏移相对此计算。
+ * (2026-09-11 清理:删除身高控制相关代码,SERVO_NEUTRAL_US 不再用于身高)
  */
-#define SERVO_NEUTRAL_US     1500   /* 默认站起来 ~85 mm(原 1500 = 标定基线)*/
-#define SHIN_SERVO_COUNT     4
-#define HEIGHT_US_PER_MM     4    /* 1 mm 身体抬升 ≈ 4 µs PWM 增量(待实测) */
-#define HEIGHT_DELTA_MAX_MM  40   /* 安全上限 ±40 mm */
-
-/* 4 路小腿舵机的 servo 编号: 0=BR, 2=FR, 5=FL, 7=BL */
-static const uint8_t SHIN_SERVO_IDS[SHIN_SERVO_COUNT] = {0, 2, 5, 7};
-static uint16_t shin_pwm_state[SHIN_SERVO_COUNT] = {1500, 1500, 1500, 1500};
-
-/* 设置 4 路小腿舵机同步(只动小腿,肩部舵机不动) */
-static void set_all_shin_pwm(uint16_t pwm) {
-  for (uint8_t i = 0; i < SHIN_SERVO_COUNT; i++) {
-    set_servo_pulse(SHIN_SERVO_IDS[i], pwm);
-    shin_pwm_state[i] = pwm;
-  }
-}
-
-/* 应用身体高度增量(相对默认 SERVO_NEUTRAL_US)
- * delta_mm: 正数 = 抬升, 负数 = 下降
- * 安全检查: PWM 范围 500~2500, 高度限制 ±HEIGHT_DELTA_MAX_MM
- */
-static void apply_height_delta(int16_t delta_mm) {
-  /* 安全范围检查 */
-  if (delta_mm > HEIGHT_DELTA_MAX_MM) delta_mm = HEIGHT_DELTA_MAX_MM;
-  if (delta_mm < -HEIGHT_DELTA_MAX_MM) delta_mm = -HEIGHT_DELTA_MAX_MM;
-  int32_t pwm = (int32_t)SERVO_NEUTRAL_US + (int32_t)delta_mm * HEIGHT_US_PER_MM;
-  if (pwm < 500) pwm = 500;
-  if (pwm > 2500) pwm = 2500;
-  set_all_shin_pwm((uint16_t)pwm);
-  printf("OK dh=%dmm -> shin_pwm=%lu (servo0/2/5/7)\n",
-         delta_mm, (unsigned long)pwm);
-}
+#define SERVO_NEUTRAL_US   1500
 
 /* UART 接收命令解析:
- * 格式: "<servo_id> <pulse>\n"  例如 "0 1500\n" -> 设 servo0=1500
- *       "all <pulse>\n"          设全部 8 路(保留旧命令)
- *       "center\n"               设全部 1500 (居中,保留旧命令)
- *       "h <delta_mm>\n"         设身体高度增量(新增,2026-09-10)
- *                                 例: "h 15\n"  -> 抬升 15 mm
- *                                     "h -10\n" -> 下降 10 mm
+ * 格式: "<servo_id> <pulse>\n"   例如 "0 1500\n"   -> 设 servo0=1500
+ *       "all <pulse>\n"           设全部 8 路
+ *       "center\n"                设全部 1500(居中,标定基线)
+ *       "stand\n"                 站立姿态(8 路 STAND PWM 常量)
+ * (2026-09-11 清理:删除 sit / h <delta_mm>,理由见 CLAUDE.md)
  */
 static char rx_buf[32];
 static uint8_t rx_idx = 0;
 
 static void parse_uart_command(const char *cmd) {
   unsigned int id = 0, pulse = 0;
-  int16_t delta = 0;
-  /* === 修复 1:用 strncmp 前置判别 "all" 和 "h"
-   * 原 bug: sscanf("%u %u") 遇到 "all" 返回 0 但不消耗,
-   *         导致 "all 1500" 走 else 分支全失败 → ERR fmt
-   */
+  /* 用 strncmp 前置判别 "all",避免 sscanf("%u %u") 误拦截
+   * 原 bug: sscanf 遇到 "all" 返回 0 但不消耗,走 else 分支全失败 */
   if (strncmp(cmd, "all ", 4) == 0) {
     if (sscanf(cmd + 4, "%u", &pulse) == 1) {
       if (pulse >= 500 && pulse <= 2500) {
@@ -182,13 +123,6 @@ static void parse_uart_command(const char *cmd) {
       } else {
         printf("ERR pulse range\n");
       }
-    } else {
-      printf("ERR fmt\n");
-    }
-  } else if (cmd[0] == 'h' && cmd[1] == ' ') {
-    /* === 修复 2:h 命令前置判别,避免被 sscanf("%u %u") 拦截 === */
-    if (sscanf(cmd + 2, "%hd", &delta) == 1) {
-      apply_height_delta(delta);
     } else {
       printf("ERR fmt\n");
     }
@@ -213,19 +147,8 @@ static void parse_uart_command(const char *cmd) {
     set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
     set_servo_pulse(7, SERVO_SHIN_BL_STAND);
     printf("OK stand\n");
-  } else if (strcmp(cmd, "sit") == 0) {
-    /* 蹲下姿态(用户算法:站立 ±100 朝中,2026-09-11) */
-    set_servo_pulse(0, SERVO_SHIN_BR_SIT);
-    set_servo_pulse(1, SERVO_SHOULDER_BR_SIT);
-    set_servo_pulse(2, SERVO_SHIN_FR_SIT);
-    set_servo_pulse(3, SERVO_SHOULDER_FR_SIT);
-    set_servo_pulse(4, SERVO_SHOULDER_FL_SIT);
-    set_servo_pulse(5, SERVO_SHIN_FL_SIT);
-    set_servo_pulse(6, SERVO_SHOULDER_BL_SIT);
-    set_servo_pulse(7, SERVO_SHIN_BL_SIT);
-    printf("OK sit\n");
   } else {
-    /* === 修复 3:加回显便于调试 === */
+    /* 加回显便于调试 */
     printf("ERR fmt: '%s'\n", cmd);
   }
 }
