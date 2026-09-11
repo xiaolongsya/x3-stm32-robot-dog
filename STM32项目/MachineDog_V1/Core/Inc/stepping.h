@@ -8,7 +8,7 @@
   * 与旧 gait.c 的关键差异:
   *   1. 不套 py-apple 的 init_*=90° 假设,改用我们机器狗实测 STAND_PWM 反推 init_*
   *   2. 不套 py-apple 的 ±90 数学偏移,镜像通过 ham/shank 符号翻转实现
-  *   3. 加 SERVO_LIMIT 安全限位(防止 IK 偶发偏差打到机械极限)
+  *   3. SERVO_LIMIT 安全活动范围(防止 IK 偶发偏差打到机械极限)
   *
   * 来源:
   *   padog.py / PA_GAIT.py / PA_IK.py / PA_ATTITUDE.py(PA-Dynamics V7.3 SRC)
@@ -21,13 +21,24 @@
   *   step stop    停止踏步,舵机回 STAND
   *   step show    打印当前 ham/shank/8 路 PWM(每 0.5s 一次)
   *
-  * 腿编号约定(对角步态,2026-09-11):
-  *   腿1=FR (大腿=servo3, 小腿=servo2)  → 公式: thigh=init_1h - ham, shin=init_1s + shank
-  *   腿2=FL (大腿=servo4, 小腿=servo5)  → 公式: thigh=init_2h + ham, shin=init_2s - shank(镜像)
-  *   腿3=BL (大腿=servo6, 小腿=servo7)  → 公式: thigh=init_3h + ham, shin=init_3s - shank(镜像)
-  *   腿4=BR (大腿=servo1, 小腿=servo0)  → 公式: thigh=init_4h - ham, shin=init_4s + shank
+  * 腿编号约定(对角步态,2026-09-12 与 stepping.c 对齐):
+  *   腿1=FR (大腿=servo3, 小腿=servo2)  → 公式: thigh=init_1h + (ham-HAM_STD_FRONT), shin=init_1s - (shank-SHANK_STD)
+  *   腿2=FL (大腿=servo4, 小腿=servo5)  → 公式: thigh=init_2h - (ham-HAM_STD_FRONT), shin=init_2s + (shank-SHANK_STD)(镜像)
+  *   腿3=BL (大腿=servo6, 小腿=servo7)  → 公式: thigh=init_3h - (ham-HAM_STD_BACK),  shin=init_3s + (shank-SHANK_STD)(镜像)
+  *   腿4=BR (大腿=servo1, 小腿=servo0)  → 公式: thigh=init_4h + (ham-HAM_STD_BACK),  shin=init_4s - (shank-SHANK_STD)
   *
   *   trot:腿 1+3 swing vs 腿 2+4 support(对角交替)
+  *
+  * STAND 物理含义(2026-09-12 用户拍板):
+  *   - 1500 = 舵机中位 = 大腿垂直 + 小腿水平(几何最高)
+  *   - STAND = 4 脚贴地的实测姿态,作为步态参考基线(非机械端点)
+  *   - SERVO_LIMIT:4 小腿统一 (1400, 1600);4 肩统一 (1000, 2000)
+  *
+  * PWM 方向约定(2026-09-12 用户拍板):
+  *   - 左小腿 PWM 增 → 内折(降低);PWM 减 → 极限伸展(升高)
+  *   - 右小腿 PWM 增 → 极限伸展(升高);PWM 减 → 内折(降低)
+  *   - 左肩 PWM 增 → 外展;PWM 减 → 内折
+  *   - 右肩 PWM 增 → 内折(右舵机反向);PWM 减 → 外展
   ******************************************************************************
   */
 /* USER CODE END Header */

@@ -13,7 +13,7 @@ import os
 import time
 import numpy as np
 
-THRESHOLD = float(sys.argv[1]) if len(sys.argv) > 1 else 0.5
+THRESHOLD = float(sys.argv[1]) if len(sys.argv) > 1 else 0.7
 MODEL_PATH = sys.argv[2] if len(sys.argv) > 2 else "/tmp/xiaolong.onnx"
 COOLDOWN = 1.5  # 秒,避免连续触发
 

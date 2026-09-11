@@ -7,7 +7,7 @@
 #   ctl fg [阈值]      前台运行(直接看输出,Ctrl+C 停)
 
 LOG=/tmp/kws_ctl.log
-THRESHOLD="${2:-0.5}"
+THRESHOLD="${2:-0.7}"
 
 case "$1" in
   start)
@@ -53,7 +53,7 @@ case "$1" in
   *)
     echo "用法: ctl {start [阈值] | log | stop | status | fg [阈值]}"
     echo
-    echo "  start [阈值]  后台启动(默认阈值 0.5),日志 /tmp/kws_ctl.log"
+    echo "  start [阈值]  后台启动(默认阈值 0.7),日志 /tmp/kws_ctl.log"
     echo "  log           实时看日志(tail -f,Ctrl+C 不影响后台)"
     echo "  stop          停止"
     echo "  status        看运行状态"

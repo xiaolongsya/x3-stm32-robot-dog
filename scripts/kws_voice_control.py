@@ -22,7 +22,7 @@ import time
 import numpy as np
 
 # ── 配置 ──────────────────────────────────────────────
-THRESHOLD = float(sys.argv[1]) if len(sys.argv) > 1 else 0.5
+THRESHOLD = float(sys.argv[1]) if len(sys.argv) > 1 else 0.7
 UART_DEV = os.environ.get("KWS_UART", "/dev/ttyS1")
 UART_BAUD = int(os.environ.get("KWS_BAUD", "115200"))
 MODEL_PATH = os.environ.get("KWS_MODEL", "/tmp/xiaolong.onnx")

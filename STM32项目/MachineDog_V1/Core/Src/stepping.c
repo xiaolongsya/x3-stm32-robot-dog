@@ -49,17 +49,20 @@ static const float init_3s = INIT_DEG_FROM_PWM(SERVO_SHIN_BL_STAND);      /* BL 
 static const float init_4h = INIT_DEG_FROM_PWM(SERVO_SHOULDER_BR_STAND);  /* BR 肩 = 1150 → 58.5° */
 static const float init_4s = INIT_DEG_FROM_PWM(SERVO_SHIN_BR_STAND);      /* BR 小腿 = 1600 → 99° */
 
-/* === 8 路舵机安全限位(踏步过程)===========================================
- * 索引按 servo_id 0-7:BR小腿/BR肩/FR小腿/FR肩/FL肩/FL小腿/BL肩/BL小腿
- * 范围按 2026-09-11 用户实测修正:STAND 是小腿"最高位"的极限
- *   - 小腿只能单方向运动(反方向机械空间已被 STAND 占满)
- *   - 大腿相对灵活(STAND ±200µs 内可动)
- *   - shin: STAND ±150µs(10mm 抬腿需 ~137µs,留余量)
- *   - thigh: STAND ±200µs(用户拍板:三四百也行但先小一点)
+/* === 8 路舵机安全活动范围(2026-09-12 用户拍板)====================
+ * 索引按 servo_id 0-7
+ * 4 小腿统一 (1400, 1600);4 肩统一 (1000, 2000)
+ * STAND 是 4 脚贴地的实测姿态,作为步态参考基线,非机械端点
  *
- * 推导依据:
- *   - h_lift=10mm IK 输出:shin 变化 ≈ 12.3°(±137µs)
- *   - thigh 变化:前腿 -3°/后腿 -8°(±33~89µs)
+ *   id  STAND   min   max   说明
+ *   0   1600    1400  1600  BR 小腿
+ *   1   1150    1000  2000  BR 肩
+ *   2   1500    1400  1600  FR 小腿
+ *   3   1200    1000  2000  FR 肩
+ *   4   1820    1000  2000  FL 肩
+ *   5   1500    1400  1600  FL 小腿
+ *   6   1850    1000  2000  BL 肩
+ *   7   1400    1400  1600  BL 小腿
  */
 typedef struct {
   uint16_t stand;
@@ -68,14 +71,14 @@ typedef struct {
 } ServoLimit;
 
 static const ServoLimit SERVO_LIMIT[8] = {
-  /*0  BR 小腿 */ {SERVO_SHIN_BR_STAND,       1450, 1600},  /* 仅 DOWN,150µs */
-  /*1  BR 肩   */ {SERVO_SHOULDER_BR_STAND,   950,  1150},  /* 仅 DOWN,200µs */
-  /*2  FR 小腿 */ {SERVO_SHIN_FR_STAND,       1350, 1500},  /* 仅 DOWN,150µs */
-  /*3  FR 肩   */ {SERVO_SHOULDER_FR_STAND,   1000, 1200},  /* 仅 DOWN,200µs */
-  /*4  FL 肩   */ {SERVO_SHOULDER_FL_STAND,   1820, 2020},  /* 仅 UP,200µs */
-  /*5  FL 小腿 */ {SERVO_SHIN_FL_STAND,       1500, 1650},  /* 仅 UP,150µs */
-  /*6  BL 肩   */ {SERVO_SHOULDER_BL_STAND,   1850, 2050},  /* 仅 UP,200µs */
-  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,       1400, 1550},  /* 仅 UP,150µs */
+  /*0  BR 小腿 */ {SERVO_SHIN_BR_STAND,       1400, 1600},
+  /*1  BR 肩   */ {SERVO_SHOULDER_BR_STAND,   1000, 2000},
+  /*2  FR 小腿 */ {SERVO_SHIN_FR_STAND,       1400, 1600},
+  /*3  FR 肩   */ {SERVO_SHOULDER_FR_STAND,   1000, 2000},
+  /*4  FL 肩   */ {SERVO_SHOULDER_FL_STAND,   1000, 2000},
+  /*5  FL 小腿 */ {SERVO_SHIN_FL_STAND,       1400, 1600},
+  /*6  BL 肩   */ {SERVO_SHOULDER_BL_STAND,   1000, 2000},
+  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,       1400, 1600},
 };
 
 /* === 步态参数 =============================================================
