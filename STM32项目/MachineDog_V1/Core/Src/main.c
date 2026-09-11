@@ -216,18 +216,25 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* === 重新标定模式(2026-09-11)===
-   * 8 路舵机全部设 1500,用户手动装舵机臂到 90 度几何居中位置。
-   * 装完机械结构后,改 SERVO_NEUTRAL_US 到合适的基线即可。
+  /* === 默认站立姿态(2026-09-11 标定后)===
+   * 用户实测反馈(从舵机后方看):
+   *   右腿小腿:顺时针(PWM 减小)→ 抬升身体
+   *   右腿肩部:逆时针(PWM 增大)→ 弯曲腿
+   *   左腿小腿:逆时针(PWM 增大)→ 抬升身体(左舵机反装)
+   *   左腿肩部:顺时针(PWM 减小)→ 弯曲腿(左舵机反装)
+   * = 综合:小狗'站起来一点'
+   *
+   * 右腿 4 路:PWM 1400(−100 µs,顺时针)
+   * 左腿 4 路:PWM 1600(+100 µs,逆时针)
    */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1500);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);  /* PA5  = TIM2_CH1  = servo3 = FR 肩  */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1500);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1500);  /* PA3  = TIM2_CH4  = servo1 = BR 肩  */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500);  /* PA6  = TIM3_CH1  = servo4 = FL 肩  */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1500);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1500);  /* PB0  = TIM3_CH3  = servo6 = BL 肩  */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500); /* PA7  = TIM17_CH1 = servo5 = FL 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1600);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿(左,逆时针) */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1400);  /* PA5  = TIM2_CH1  = servo3 = FR 肩 (右,逆时针) */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1400);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿(右,顺时针) */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1400);  /* PA3  = TIM2_CH4  = servo1 = BR 肩 (右,逆时针) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1  = servo4 = FL 肩 (左,顺时针) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1400);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿(右,顺时针) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1600);  /* PB0  = TIM3_CH3  = servo6 = BL 肩 (左,顺时针) */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1600); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(左,逆时针) */
   /* USER CODE END 2 */
 
   while (1)
