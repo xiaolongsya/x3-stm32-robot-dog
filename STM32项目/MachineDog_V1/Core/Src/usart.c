@@ -143,9 +143,10 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 #include <stdio.h>
 
 int fputc(int ch, FILE *f) {
-  /* 修复:用 5ms 短超时,避免 printf 死锁卡住主循环接收
-   * 原 HAL_MAX_DELAY 如果 TX 短路会无限等 */
-  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 5);
+  /* 改回 HAL_MAX_DELAY:之前 5ms 短超时导致字符丢失
+   * Pi 端收到的是断裂的字符串,readline 永远等不到 \n
+   * HAL_MAX_DELAY 不会真死锁(USART TX 16 字节 buffer 瞬间可写) */
+  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
   return ch;
 }
 
