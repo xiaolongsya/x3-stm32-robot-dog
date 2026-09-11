@@ -51,13 +51,15 @@ static const float init_4s = INIT_DEG_FROM_PWM(SERVO_SHIN_BR_STAND);      /* BR 
 
 /* === 8 路舵机安全限位(踏步过程)===========================================
  * 索引按 servo_id 0-7:BR小腿/BR肩/FR小腿/FR肩/FL肩/FL小腿/BL肩/BL小腿
- * MIN/MAX 是 IK 输出后必须 clamp 的范围(机械外再留 ±100µs 余量)
+ * 范围按 2026-09-11 用户实测修正:STAND 是小腿"最高位"的极限
+ *   - 小腿只能单方向运动(反方向机械空间已被 STAND 占满)
+ *   - 大腿相对灵活(STAND ±200µs 内可动)
+ *   - shin: STAND ±150µs(10mm 抬腿需 ~137µs,留余量)
+ *   - thigh: STAND ±200µs(用户拍板:三四百也行但先小一点)
  *
  * 推导依据:
- *   - h_lift=10mm IK 输出(shin 变化 ≈ 12.3°,thigh 变化 3~8°)
- *   - shin STAND ±180µs ≈ ±16° → 覆盖抬腿 + 安全余量
- *   - thigh STAND ±300µs ≈ ±27° → 覆盖抬腿 + 安全余量
- *   - 单边限制(FL thigh STAND=1820,不能向低超过 1500;FR thigh=1200 不能向高超过 1500)
+ *   - h_lift=10mm IK 输出:shin 变化 ≈ 12.3°(±137µs)
+ *   - thigh 变化:前腿 -3°/后腿 -8°(±33~89µs)
  */
 typedef struct {
   uint16_t stand;
@@ -66,14 +68,14 @@ typedef struct {
 } ServoLimit;
 
 static const ServoLimit SERVO_LIMIT[8] = {
-  /*0  BR 小腿 */ {SERVO_SHIN_BR_STAND,       1420, 1780},
-  /*1  BR 肩   */ {SERVO_SHOULDER_BR_STAND,   900,  1450},
-  /*2  FR 小腿 */ {SERVO_SHIN_FR_STAND,       1320, 1680},
-  /*3  FR 肩   */ {SERVO_SHOULDER_FR_STAND,   900,  1500},
-  /*4  FL 肩   */ {SERVO_SHOULDER_FL_STAND,   1520, 2100},
-  /*5  FL 小腿 */ {SERVO_SHIN_FL_STAND,       1320, 1680},
-  /*6  BL 肩   */ {SERVO_SHOULDER_BL_STAND,   1550, 2100},
-  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,       1220, 1580},
+  /*0  BR 小腿 */ {SERVO_SHIN_BR_STAND,       1450, 1600},  /* 仅 DOWN,150µs */
+  /*1  BR 肩   */ {SERVO_SHOULDER_BR_STAND,   950,  1150},  /* 仅 DOWN,200µs */
+  /*2  FR 小腿 */ {SERVO_SHIN_FR_STAND,       1350, 1500},  /* 仅 DOWN,150µs */
+  /*3  FR 肩   */ {SERVO_SHOULDER_FR_STAND,   1000, 1200},  /* 仅 DOWN,200µs */
+  /*4  FL 肩   */ {SERVO_SHOULDER_FL_STAND,   1820, 2020},  /* 仅 UP,200µs */
+  /*5  FL 小腿 */ {SERVO_SHIN_FL_STAND,       1500, 1650},  /* 仅 UP,150µs */
+  /*6  BL 肩   */ {SERVO_SHOULDER_BL_STAND,   1850, 2050},  /* 仅 UP,200µs */
+  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,       1400, 1550},  /* 仅 UP,150µs */
 };
 
 /* === 步态参数 =============================================================
@@ -257,22 +259,24 @@ static void stepping_trot_step(void) {
    *   前腿(FR/FL, x_in=+71): ham_std ≈ 96.7°, shank_std ≈ 57.1°
    *   后腿(BL/BR, x_in=-71): ham_std ≈ 30.8°, shank_std ≈ 57.1°
    *
-   * 公式(腿1/4 vs 腿2/3 镜像,sign 翻转):
-   *   a_thigh = init_h ± (ham - ham_std_leg)
-   *   a_shin  = init_s ± (shank - shank_std)
+   * 公式:
+   *   thigh 方向 (用户拍板:远离 1500 = 更平行):
+   *     腿1/4(RIGHT): a_thigh = init_h + (ham - ham_std_leg)   ← ham 减 → a_thigh 减(远离 1500)
+   *     腿2/3(LEFT, 镜像): a_thigh = init_h - (ham - ham_std_leg) ← ham 减 → a_thigh 加(远离 1500)
+   *   shin 方向 (用户拍板:STAND 是最高位极限,只能反向运动):
+   *     腿1/4(RIGHT): a_shin = init_s - (shank - shank_std)    ← shank 增 → a_shin 减(离开 1500)
+   *     腿2/3(LEFT, 镜像): a_shin = init_s + (shank - shank_std)  ← shank 增 → a_shin 加(离开 1500)
    *
    * 验证:STAND 时 ham=ham_std, shank=shank_std → a_thigh = init_h, a_shin = init_s ✅
-   *
-   * ⚠️ 方向符号 (±) 由舵机装配方向决定,首次实跑若方向反了翻转所有 ± 号
    */
   float a_thigh_1 = init_1h + (ham1 - STEP_HAM_STD_FRONT);  /* FR 肩 */
-  float a_shin_1  = init_1s + (shank1 - STEP_SHANK_STD);    /* FR 小腿 */
+  float a_shin_1  = init_1s - (shank1 - STEP_SHANK_STD);    /* FR 小腿 */
   float a_thigh_2 = init_2h - (ham2 - STEP_HAM_STD_FRONT);  /* FL 肩 (镜像) */
-  float a_shin_2  = init_2s - (shank2 - STEP_SHANK_STD);    /* FL 小腿 */
+  float a_shin_2  = init_2s + (shank2 - STEP_SHANK_STD);    /* FL 小腿 */
   float a_thigh_3 = init_3h - (ham3 - STEP_HAM_STD_BACK);   /* BL 肩 (镜像) */
-  float a_shin_3  = init_3s - (shank3 - STEP_SHANK_STD);    /* BL 小腿 */
+  float a_shin_3  = init_3s + (shank3 - STEP_SHANK_STD);    /* BL 小腿 */
   float a_thigh_4 = init_4h + (ham4 - STEP_HAM_STD_BACK);   /* BR 肩 */
-  float a_shin_4  = init_4s + (shank4 - STEP_SHANK_STD);    /* BR 小腿 */
+  float a_shin_4  = init_4s - (shank4 - STEP_SHANK_STD);    /* BR 小腿 */
 
   /* 角度 → PWM → clamp → set_servo_pulse */
   uint16_t p3 = clamp_servo_pwm(3, angle_to_pwm(a_thigh_1));  /* FR 肩 */
