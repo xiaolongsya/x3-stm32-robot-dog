@@ -43,16 +43,33 @@
  *   左腿顺时针 = PWM 减小
  * 默认全 1500(标定基线)
  */
+/* === 站立姿态(用户实测调整,2026-09-11)===
+ * 后腿肩部微调过,接近 4 脚同步落地,这是高度极限
+ */
 /* 4 路肩部舵机(180 度范围 500-2500) */
-#define SERVO_SHOULDER_BR   1500  /* PA3  = TIM2_CH4 = servo1 = BR 肩 */
-#define SERVO_SHOULDER_FR   1500  /* PA5  = TIM2_CH1 = servo3 = FR 肩 */
-#define SERVO_SHOULDER_FL   1500  /* PA6  = TIM3_CH1 = servo4 = FL 肩 */
-#define SERVO_SHOULDER_BL   1500  /* PB0  = TIM3_CH3 = servo6 = BL 肩 */
+#define SERVO_SHOULDER_BR_STAND   1200  /* PA3  = TIM2_CH4 = servo1 = BR 肩(−300 弯曲)*/
+#define SERVO_SHOULDER_FR_STAND   1300  /* PA5  = TIM2_CH1 = servo3 = FR 肩(−200 弯曲)*/
+#define SERVO_SHOULDER_FL_STAND   1620  /* PA6  = TIM3_CH1 = servo4 = FL 肩(+120 弯曲)*/
+#define SERVO_SHOULDER_BL_STAND   1750  /* PB0  = TIM3_CH3 = servo6 = BL 肩(+250 弯曲)*/
 /* 4 路小腿舵机 */
-#define SERVO_SHIN_BR        1500  /* PA2  = TIM2_CH3 = servo0 = BR 小腿 */
-#define SERVO_SHIN_FR        1500  /* PA4  = TIM3_CH2 = servo2 = FR 小腿 */
-#define SERVO_SHIN_FL        1500  /* PA7  = TIM17_CH1 = servo5 = FL 小腿 */
-#define SERVO_SHIN_BL        1500  /* PA8  = TIM1_CH1 = servo7 = BL 小腿 */
+#define SERVO_SHIN_BR_STAND        1600  /* PA2  = TIM2_CH3 = servo0 = BR 小腿(+100 抬升)*/
+#define SERVO_SHIN_FR_STAND        1600  /* PA4  = TIM3_CH2 = servo2 = FR 小腿(+100 抬升)*/
+#define SERVO_SHIN_FL_STAND        1400  /* PA7  = TIM17_CH1 = servo5 = FL 小腿(−100 抬升)*/
+#define SERVO_SHIN_BL_STAND        1400  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(−100 抬升)*/
+/* === 蹲下姿态(2026-09-11)===
+ * 算法:每条腿朝 1500 方向移动 100(站立 ±100 朝中)
+ * 效果:小腿全回中(腿伸直),肩部偏移减少(少弯曲)= 蹲下姿态
+ */
+/* 4 路肩部舵机(蹲下) */
+#define SERVO_SHOULDER_BR_SIT     1300  /* +100 朝中(−300 → −200) */
+#define SERVO_SHOULDER_FR_SIT     1400  /* +100 朝中(−200 → −100) */
+#define SERVO_SHOULDER_FL_SIT     1520  /* −100 朝中(+120 → +20) */
+#define SERVO_SHOULDER_BL_SIT     1650  /* −100 朝中(+250 → +150) */
+/* 4 路小腿舵机(蹲下全回中 1500) */
+#define SERVO_SHIN_BR_SIT          1500  /* −100(回中)*/
+#define SERVO_SHIN_FR_SIT          1500  /* −100(回中)*/
+#define SERVO_SHIN_FL_SIT          1500  /* +100(回中)*/
+#define SERVO_SHIN_BL_SIT          1500  /* +100(回中)*/
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -185,6 +202,28 @@ static void parse_uart_command(const char *cmd) {
   } else if (strcmp(cmd, "center") == 0) {
     for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
     printf("OK center\n");
+  } else if (strcmp(cmd, "stand") == 0) {
+    /* 站立姿态(用户实测参数,2026-09-11) */
+    set_servo_pulse(0, SERVO_SHIN_BR_STAND);
+    set_servo_pulse(1, SERVO_SHOULDER_BR_STAND);
+    set_servo_pulse(2, SERVO_SHIN_FR_STAND);
+    set_servo_pulse(3, SERVO_SHOULDER_FR_STAND);
+    set_servo_pulse(4, SERVO_SHOULDER_FL_STAND);
+    set_servo_pulse(5, SERVO_SHIN_FL_STAND);
+    set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
+    set_servo_pulse(7, SERVO_SHIN_BL_STAND);
+    printf("OK stand\n");
+  } else if (strcmp(cmd, "sit") == 0) {
+    /* 蹲下姿态(用户算法:站立 ±100 朝中,2026-09-11) */
+    set_servo_pulse(0, SERVO_SHIN_BR_SIT);
+    set_servo_pulse(1, SERVO_SHOULDER_BR_SIT);
+    set_servo_pulse(2, SERVO_SHIN_FR_SIT);
+    set_servo_pulse(3, SERVO_SHOULDER_FR_SIT);
+    set_servo_pulse(4, SERVO_SHOULDER_FL_SIT);
+    set_servo_pulse(5, SERVO_SHIN_FL_SIT);
+    set_servo_pulse(6, SERVO_SHOULDER_BL_SIT);
+    set_servo_pulse(7, SERVO_SHIN_BL_SIT);
+    printf("OK sit\n");
   } else {
     /* === 修复 3:加回显便于调试 === */
     printf("ERR fmt: '%s'\n", cmd);
@@ -246,14 +285,17 @@ int main(void)
    *   前腿(servo2/3 FR, servo4/5 FL):肩 ±100,小腿 −50/+50(前腿不弯太多)
    *   后腿(servo0/1 BR, servo6/7 BL):肩 ±200,小腿 −200/+200(后腿大幅弯)
    */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, SERVO_SHIN_BL);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, SERVO_SHOULDER_FR);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, SERVO_SHIN_BR);
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, SERVO_SHOULDER_BR);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, SERVO_SHOULDER_FL);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, SERVO_SHIN_FR);
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_SHOULDER_BL);
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, SERVO_SHIN_FL);
+  /* === 默认站立姿态(2026-09-11)===
+ * 上电默认: 站立姿态(用户实测微调参数)
+ */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, SERVO_SHIN_BL_STAND);   /* servo7 = BL 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, SERVO_SHOULDER_FR_STAND); /* servo3 = FR 肩 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, SERVO_SHIN_BR_STAND);    /* servo0 = BR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, SERVO_SHOULDER_BR_STAND); /* servo1 = BR 肩 */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, SERVO_SHOULDER_FL_STAND); /* servo4 = FL 肩 */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, SERVO_SHIN_FR_STAND);    /* servo2 = FR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_SHOULDER_BL_STAND); /* servo6 = BL 肩 */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, SERVO_SHIN_FL_STAND);   /* servo5 = FL 小腿 */
   /* USER CODE END 2 */
 
   while (1)
