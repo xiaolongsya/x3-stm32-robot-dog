@@ -17,6 +17,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include "gait.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -80,8 +81,13 @@ void SystemClock_Config(void);
  *  后肩: servo1(BR), servo6(BL)
  *  后小腿: servo0(BR), servo7(BL)
  */
+
+/* 当前 8 路舵机 PWM(每次 set_servo_pulse 时更新,供 cal save 用) */
+static uint16_t current_pwm[8];
+
 static void set_servo_pulse(uint8_t id, uint16_t pulse) {
   if (pulse < 500 || pulse > 2500) return;
+  current_pwm[id] = pulse;
   switch (id) {
     case 0: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, pulse); break;
     case 1: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pulse); break;
@@ -101,20 +107,23 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
  */
 #define SERVO_NEUTRAL_US   1500
 
-/* UART 接收命令解析:
+/* UART 接收命令解析(2026-09-11 扩展 +cal +step):
  * 格式: "<servo_id> <pulse>\n"   例如 "0 1500\n"   -> 设 servo0=1500
  *       "all <pulse>\n"           设全部 8 路
  *       "center\n"                设全部 1500(居中,标定基线)
- *       "stand\n"                 站立姿态(8 路 STAND PWM 常量)
- * (2026-09-11 清理:删除 sit / h <delta_mm>,理由见 CLAUDE.md)
+ *       "stand\n"                 站立姿态(用 stand_pwm 数组,可由 cal save 覆盖)
+ *       "cal raw"                 8 路舵机设 1500(机械零位,开始标定)
+ *       "cal save"                当前 8 路 PWM 保存为 STAND
+ *       "cal show"                报告当前 STAND 数组
+ *       "step trot"               启动 trot 踏步(原地抬腿落下,100Hz)
+ *       "step stop"               停止踏步,回 STAND
  */
 static char rx_buf[32];
 static uint8_t rx_idx = 0;
 
 static void parse_uart_command(const char *cmd) {
   unsigned int id = 0, pulse = 0;
-  /* 用 strncmp 前置判别 "all",避免 sscanf("%u %u") 误拦截
-   * 原 bug: sscanf 遇到 "all" 返回 0 但不消耗,走 else 分支全失败 */
+  /* 用 strncmp 前置判别 "all" / "cal" / "step",避免 sscanf("%u %u") 误拦截 */
   if (strncmp(cmd, "all ", 4) == 0) {
     if (sscanf(cmd + 4, "%u", &pulse) == 1) {
       if (pulse >= 500 && pulse <= 2500) {
@@ -126,6 +135,21 @@ static void parse_uart_command(const char *cmd) {
     } else {
       printf("ERR fmt\n");
     }
+  } else if (strcmp(cmd, "cal raw") == 0) {
+    /* 标定模式:8 路舵机设 1500 µs(机械零位)
+     * 用户观察机械几何(目标:大腿垂直地面,小腿水平向前)
+     * 然后用 <id> <pulse> 微调,最后 cal save 保存 */
+    gait_cal_raw();
+    printf("OK cal raw: 8 servos at 1500\n");
+  } else if (strcmp(cmd, "cal save") == 0) {
+    /* 把当前 8 路 PWM 保存为 STAND(运行时覆盖,无需重编译) */
+    gait_cal_save_stand_array(current_pwm);
+  } else if (strcmp(cmd, "cal show") == 0) {
+    gait_cal_show_stand();
+  } else if (strcmp(cmd, "step trot") == 0) {
+    gait_start_trot();
+  } else if (strcmp(cmd, "step stop") == 0) {
+    gait_stop();
   } else if (sscanf(cmd, "%u %u", &id, &pulse) == 2) {
     if (id <= 7) {
       set_servo_pulse((uint8_t)id, (uint16_t)pulse);
@@ -137,15 +161,9 @@ static void parse_uart_command(const char *cmd) {
     for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
     printf("OK center\n");
   } else if (strcmp(cmd, "stand") == 0) {
-    /* 站立姿态(用户实测参数,2026-09-11) */
-    set_servo_pulse(0, SERVO_SHIN_BR_STAND);
-    set_servo_pulse(1, SERVO_SHOULDER_BR_STAND);
-    set_servo_pulse(2, SERVO_SHIN_FR_STAND);
-    set_servo_pulse(3, SERVO_SHOULDER_FR_STAND);
-    set_servo_pulse(4, SERVO_SHOULDER_FL_STAND);
-    set_servo_pulse(5, SERVO_SHIN_FL_STAND);
-    set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
-    set_servo_pulse(7, SERVO_SHIN_BL_STAND);
+    /* 站立姿态:从 stand_pwm 数组读取(默认从 SERVO_*_STAND 初始化,可被 cal save 覆盖) */
+    const uint16_t *sp = gait_get_stand_pwm();
+    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, sp[i]);
     printf("OK stand\n");
   } else {
     /* 加回显便于调试 */
@@ -197,28 +215,13 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* === 默认站立姿态(2026-09-11 标定后第三次调)===
-   * 用户最新要求:'站不起来,主要是小腿太平了,前后都一样'
-   * = 小腿弯曲不够,需要加大;后腿多提高
-   * 用户方向(从舵机后方看):
-   *   右腿:顺时针(PWM 减小)→ 弯曲+抬升
-   *   左腿:逆时针(PWM 增大)→ 弯曲+抬升(左舵机反装)
-   *
-   * 设计(从 1500 基线出发,后腿幅度大):
-   *   前腿(servo2/3 FR, servo4/5 FL):肩 ±100,小腿 −50/+50(前腿不弯太多)
-   *   后腿(servo0/1 BR, servo6/7 BL):肩 ±200,小腿 −200/+200(后腿大幅弯)
+  /* === 上电默认姿态(2026-09-11 改)===
+   * 默认: 从 stand_pwm 数组读取 STAND(初值 = SERVO_*_STAND 常量,可被 cal save 覆盖)
+   * gait_init() 必须在 HAL_TIM_PWM_Start 之后调(否则 htim 还没启动)
    */
-  /* === 默认站立姿态(2026-09-11)===
- * 上电默认: 站立姿态(用户实测微调参数)
- */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, SERVO_SHIN_BL_STAND);   /* servo7 = BL 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, SERVO_SHOULDER_FR_STAND); /* servo3 = FR 肩 */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, SERVO_SHIN_BR_STAND);    /* servo0 = BR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, SERVO_SHOULDER_BR_STAND); /* servo1 = BR 肩 */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, SERVO_SHOULDER_FL_STAND); /* servo4 = FL 肩 */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, SERVO_SHIN_FR_STAND);    /* servo2 = FR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_SHOULDER_BL_STAND); /* servo6 = BL 肩 */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, SERVO_SHIN_FL_STAND);   /* servo5 = FL 小腿 */
+  gait_init();
+  const uint16_t *sp = gait_get_stand_pwm();
+  for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, sp[i]);
   /* USER CODE END 2 */
 
   while (1)
