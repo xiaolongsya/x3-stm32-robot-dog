@@ -227,14 +227,14 @@ int main(void)
    * 右腿 4 路:PWM 1400(−100 µs,顺时针)
    * 左腿 4 路:PWM 1600(+100 µs,逆时针)
    */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1600);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿(左,逆时针) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1400);  /* PA5  = TIM2_CH1  = servo3 = FR 肩 (右,逆时针) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1400);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿(右,顺时针) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1400);  /* PA3  = TIM2_CH4  = servo1 = BR 肩 (右,逆时针) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1  = servo4 = FL 肩 (左,顺时针) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1400);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿(右,顺时针) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1600);  /* PB0  = TIM3_CH3  = servo6 = BL 肩 (左,顺时针) */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1600); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(左,逆时针) */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1800);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿(左,+300 后腿大) */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1400);  /* PA5  = TIM2_CH1  = servo3 = FR 肩 (右,−100) */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1200);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿(右,−300 后腿大) */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1300);  /* PA3  = TIM2_CH4  = servo1 = BR 肩 (右,−200 后腿大) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1  = servo4 = FL 肩 (左,+100) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1300);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿(右,−200) */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1700);  /* PB0  = TIM3_CH3  = servo6 = BL 肩 (左,+200 后腿大) */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1700); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(左,+200) */
   /* USER CODE END 2 */
 
   while (1)
