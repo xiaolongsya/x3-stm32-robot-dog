@@ -35,31 +35,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-/* === 8 路舵机默认 PWM(2026-09-11)===
- * 用户调试用:从这里直接改,烧录后立即生效(配合 Clean+Build)
- * 方向约定(从舵机后方看):
- *   右腿顺时针 = PWM 减小
- *   右腿逆时针 = PWM 增大(但实际效果是腿伸直)
- *   左腿逆时针 = PWM 增大
- *   左腿顺时针 = PWM 减小
- * 默认全 1500(标定基线)
+/* 8 路舵机 STAND PWM 常量已移至 main.h(供 gait.c 可见)
+ * 运行时可通过 UART `cal save` 覆盖(写入 stand_pwm 数组)
  */
-/* === 站立姿态(用户实测调整,2026-09-11)===
- * 后腿肩部微调过,接近 4 脚同步落地,这是高度极限
- */
-/* 4 路肩部舵机(180 度范围 500-2500) */
-#define SERVO_SHOULDER_BR_STAND   1200  /* PA3  = TIM2_CH4 = servo1 = BR 肩(−300 弯曲)*/
-#define SERVO_SHOULDER_FR_STAND   1300  /* PA5  = TIM2_CH1 = servo3 = FR 肩(−200 弯曲)*/
-#define SERVO_SHOULDER_FL_STAND   1620  /* PA6  = TIM3_CH1 = servo4 = FL 肩(+120 弯曲)*/
-#define SERVO_SHOULDER_BL_STAND   1750  /* PB0  = TIM3_CH3 = servo6 = BL 肩(+250 弯曲)*/
-/* 4 路小腿舵机 */
-#define SERVO_SHIN_BR_STAND        1600  /* PA2  = TIM2_CH3 = servo0 = BR 小腿(+100 抬升)*/
-#define SERVO_SHIN_FR_STAND        1600  /* PA4  = TIM3_CH2 = servo2 = FR 小腿(+100 抬升)*/
-#define SERVO_SHIN_FL_STAND        1400  /* PA7  = TIM17_CH1 = servo5 = FL 小腿(−100 抬升)*/
-#define SERVO_SHIN_BL_STAND        1400  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(−100 抬升)*/
-/* 2026-09-11 清理:删除蹲下姿态(SERVO_*_SIT)、身高控制(SERVO_NEUTRAL_US 不再用于身高)。
- * 原因:对平衡性和舵机能力要求较高,蹲下起立动作偶尔卡死起不来,有风险,先放弃。
- * 后续要恢复:git log 找 "feat(stm32):站立/蹲下姿态" 提交(2026-09-11),恢复常量和函数即可。*/
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -85,7 +63,8 @@ void SystemClock_Config(void);
 /* 当前 8 路舵机 PWM(每次 set_servo_pulse 时更新,供 cal save 用) */
 static uint16_t current_pwm[8];
 
-static void set_servo_pulse(uint8_t id, uint16_t pulse) {
+/* 非 static:供 gait.c 调(原型在 main.h) */
+void set_servo_pulse(uint8_t id, uint16_t pulse) {
   if (pulse < 500 || pulse > 2500) return;
   current_pwm[id] = pulse;
   switch (id) {
@@ -102,10 +81,8 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
 
 /* === 标定基线(2026-09-11 保留)===
  * center 命令:把全部 8 路舵机设到 SERVO_NEUTRAL_US(1500µs = 90°)
- * 这是舵机标定的中立位,所有 STAND 偏移相对此计算。
- * (2026-09-11 清理:删除身高控制相关代码,SERVO_NEUTRAL_US 不再用于身高)
+ * SERVO_NEUTRAL_US 常量已在 main.h 定义
  */
-#define SERVO_NEUTRAL_US   1500
 
 /* UART 接收命令解析(2026-09-11 扩展 +cal +step):
  * 格式: "<servo_id> <pulse>\n"   例如 "0 1500\n"   -> 设 servo0=1500

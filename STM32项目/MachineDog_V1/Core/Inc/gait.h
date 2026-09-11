@@ -53,4 +53,26 @@ void gait_tick(void);
  */
 GaitState gait_get_state(void);
 
+/* === 标定辅助(供 main.c 的 UART cal 命令调用,2026-09-11)================*/
+/**
+ * @brief 8 路舵机设 1500 µs(机械零位,标定起点)
+ *        ⚠️ 注意:不会更新 main.c 的 current_pwm(需要 main.c 自行调用 set_servo_pulse)
+ */
+void gait_cal_raw(void);
+
+/**
+ * @brief 保存传入的 8 路 PWM 作为 STAND(运行时覆盖,无需重编译)
+ */
+void gait_cal_save_stand_array(const uint16_t pwm[8]);
+
+/**
+ * @brief 打印当前 STAND 数组(8 个 PWM 值)
+ */
+void gait_cal_show_stand(void);
+
+/**
+ * @brief 返回 STAND 数组指针(只读)
+ */
+const uint16_t *gait_get_stand_pwm(void);
+
 #endif /* GAIT_H */

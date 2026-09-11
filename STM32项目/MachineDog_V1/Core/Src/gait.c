@@ -291,6 +291,7 @@ void gait_start_trot(void) {
   gait_apply_stand();
   gait_state = GAIT_TROT;
   gait_t_phase = 0.0f;
+#ifdef HAL_TIM6_MODULE_ENABLED
   /* ⚠️ 用户需要在 main.c 的 TIM6_IRQHandler 里调 HAL_TIM_Base_Start_IT(&htim6) */
   if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {
     printf("ERR gait: TIM6 start failed\n");
@@ -298,10 +299,16 @@ void gait_start_trot(void) {
     return;
   }
   printf("OK gait trot started (T=100ms, h=%.0fmm)\n", GAIT_LIFT_H);
+#else
+  printf("ERR gait: TIM6 not configured, please add TIM6 in CubeMX (Prescaler=16999, Period=99)\n");
+  gait_state = GAIT_IDLE;
+#endif
 }
 
 void gait_stop(void) {
+#ifdef HAL_TIM6_MODULE_ENABLED
   HAL_TIM_Base_Stop_IT(&htim6);
+#endif
   gait_state = GAIT_IDLE;
   gait_t_phase = 0.0f;
   /* 退出踏步,8 路舵机回到 STAND */
@@ -323,17 +330,6 @@ GaitState gait_get_state(void) {
 }
 
 /* === 标定辅助(供 main.c 的 cal 命令调) ===================================*/
-void gait_cal_save_stand(void) {
-  /* ⚠️ 需要 main.c 维护当前 8 路舵机 PWM,我们没有反向 set 接口
-   * 实现策略:main.c 在收到 `cal save` 时,直接读上次 set_servo_pulse 的值
-   * 简化:main.c 维护 current_pwm[8],每次 set_servo_pulse 时更新
-   * gait_cal_save_stand 接收 current_pwm 数组
-   *
-   * 由于 gait.c 不知道 main.c 的 current_pwm,改用"接口参数"传 8 个值进来
-   */
-  /* (实现见下方带参数的版本) */
-}
-
 void gait_cal_save_stand_array(const uint16_t pwm[8]) {
   for (uint8_t i = 0; i < 8; i++) stand_pwm[i] = pwm[i];
   printf("OK stand saved: [");
