@@ -87,7 +87,7 @@ static void set_servo_pulse(uint8_t id, uint16_t pulse) {
  *
  * ⚠️ 这是远场近似,实测后需要重新校准 HEIGHT_US_PER_MM 常量。
  */
-#define SERVO_NEUTRAL_US     1850   /* 默认站起来 ~85 mm(原 1500 = 标定基线)*/
+#define SERVO_NEUTRAL_US     1500   /* 默认站起来 ~85 mm(原 1500 = 标定基线)*/
 #define SHIN_SERVO_COUNT     4
 #define HEIGHT_US_PER_MM     4    /* 1 mm 身体抬升 ≈ 4 µs PWM 增量(待实测) */
 #define HEIGHT_DELTA_MAX_MM  40   /* 安全上限 ±40 mm */
@@ -216,33 +216,18 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* 默认姿态(2026-09-11):
-   - 4 路大腿舵机(servo1/3/4/6)顺时针前倾一点 1530 µs(+30 µs ~ +7.5° 顺时针)
-   - 4 路小腿舵机(servo0/2/5/7)抬升 1640 µs(+140 µs ~ +35 mm 身体抬升)
-   = 综合:小狗上电后"站起来一点"
-   注:角度估算基于 1 µs = 0.09°,仅供参考
- */
-  /* 大腿 4 路:*右腿*(servo1 BR 肩, servo3 FR 肩)*逆时针*让身体抬起来
-   * *左腿*(servo4 FL 肩, servo6 BL 肩)用户标定时反了,需要 PWM 反向(3000 - pwm)
-   * 用户反馈:+PWM 让大腿往后摆(身体变矮),-PWM 让大腿往前摆(身体变高)
+  /* === 重新标定模式(2026-09-11)===
+   * 8 路舵机全部设 1500,用户手动装舵机臂到 90 度几何居中位置。
+   * 装完机械结构后,改 SERVO_NEUTRAL_US 到合适的基线即可。
    */
-  /* 右腿 2 路(servo1 BR 肩, servo3 FR 肩)逆时针 1400 */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1400);  /* PA3  = TIM2_CH4 = servo1 = BR 肩 */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1400);  /* PA5  = TIM2_CH1 = servo3 = FR 肩 */
-  /* 左腿 2 路(servo4 FL 肩, servo6 BL 肩)PWM 反向(3000 - 1400 = 1600) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1 = servo4 = FL 肩(反向) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1600);  /* PB0  = TIM3_CH3 = servo6 = BL 肩(反向) */
-  /* 小腿调整:用户反馈'站不住,后仰'
-   * 修复:前腿降一点(1800),后腿升一点(1950),形成前低后高,平衡身体
-   * *右腿*(servo0 BR, servo2 FR)按腿分前后
-   * *左腿*(servo5 FL, servo7 BL)PWM 反向(3000 - pwm)
-   */
-  /* 前腿小腿(FR/FL)降一点:1800(右前)/1200(左前反向)*/
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1800);  /* PA4  = TIM3_CH2 = servo2 = FR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1200); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(反向) */
-  /* 后腿小腿(BR/BL)升一点:1950(右后)/1050(左后反向)*/
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1950);  /* PA2  = TIM2_CH3 = servo0 = BR 小腿 */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1050);  /* PA8  = TIM1_CH1 = servo7 = BL 小腿(反向) */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1500);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1500);  /* PA5  = TIM2_CH1  = servo3 = FR 肩  */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1500);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1500);  /* PA3  = TIM2_CH4  = servo1 = BR 肩  */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1500);  /* PA6  = TIM3_CH1  = servo4 = FL 肩  */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1500);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿 */
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1500);  /* PB0  = TIM3_CH3  = servo6 = BL 肩  */
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500); /* PA7  = TIM17_CH1 = servo5 = FL 小腿 */
   /* USER CODE END 2 */
 
   while (1)
