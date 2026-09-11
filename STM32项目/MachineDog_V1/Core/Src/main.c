@@ -136,6 +136,10 @@ static void parse_uart_command(const char *cmd) {
     set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
     set_servo_pulse(7, SERVO_SHIN_BL_STAND);
     printf("OK stand\n");
+  } else if (strcmp(cmd, "sit") == 0) {
+    /* 蹲下:8 路全 1500(标定基线,腿完全伸直/居中) */
+    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
+    printf("OK sit\n");
   } else {
     /* 加回显便于调试 */
     printf("ERR fmt: '%s'\n", cmd);
