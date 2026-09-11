@@ -113,11 +113,21 @@ static void parse_uart_command(const char *cmd) {
       printf("ERR fmt\n");
     }
   } else if (strcmp(cmd, "cal raw") == 0) {
-    /* 标定模式:8 路舵机设 1500 µs(机械零位)
+    /* 标定模式:8 路舵机直接设 1500 µs(机械零位)
      * 用户观察机械几何(目标:大腿垂直地面,小腿水平向前)
-     * 然后用 <id> <pulse> 微调,最后 cal save 保存 */
-    gait_cal_raw();
-    printf("OK cal raw: 8 servos at 1500\n");
+     * 然后用 <id> <pulse> 微调,最后 cal save 保存
+     * ⚠️ 直接调 __HAL_TIM_SET_COMPARE 绕过 set_servo_pulse,确保舵机真的收到 1500 */
+    __HAL_TIM_SET_COMPARE(&htim1,  TIM_CHANNEL_1, 1500);   /* PA8  = TIM1_CH1  = servo7 */
+    __HAL_TIM_SET_COMPARE(&htim2,  TIM_CHANNEL_1, 1500);   /* PA5  = TIM2_CH1  = servo3 */
+    __HAL_TIM_SET_COMPARE(&htim2,  TIM_CHANNEL_3, 1500);   /* PA2  = TIM2_CH3  = servo0 */
+    __HAL_TIM_SET_COMPARE(&htim2,  TIM_CHANNEL_4, 1500);   /* PA3  = TIM2_CH4  = servo1 */
+    __HAL_TIM_SET_COMPARE(&htim3,  TIM_CHANNEL_1, 1500);   /* PA6  = TIM3_CH1  = servo4 */
+    __HAL_TIM_SET_COMPARE(&htim3,  TIM_CHANNEL_2, 1500);   /* PA4  = TIM3_CH2  = servo2 */
+    __HAL_TIM_SET_COMPARE(&htim3,  TIM_CHANNEL_3, 1500);   /* PB0  = TIM3_CH3  = servo6 */
+    __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500);   /* PA7  = TIM17_CH1 = servo5 */
+    /* 同步 current_pwm(避免 cal save 保存错的值) */
+    for (uint8_t i = 0; i < 8; i++) current_pwm[i] = 1500;
+    printf("OK cal raw: 8 servos at 1500 (direct HAL write)\n");
   } else if (strcmp(cmd, "cal save") == 0) {
     /* 把当前 8 路 PWM 保存为 STAND(运行时覆盖,无需重编译) */
     gait_cal_save_stand_array(current_pwm);
