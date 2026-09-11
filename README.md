@@ -99,7 +99,7 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 | v1 PCB Layout | ✅ Complete (3 轮审查通过,0 阻断) |
 | v1 Fabrication | ✅ Complete |
 | v1 Board Bring-up | 🔧 In progress (新板子焊接中,旧板子调试损伤退役) |
-| STM32 Firmware | ✅ 站立姿态 + UART 命令接口(stand/center/all/<id>);蹲下+身高控制已弃用 |
+| STM32 Firmware | ✅ 站立姿态 + UART 命令接口 + 标定模式(cal raw/save/show);蹲下+身高控制已弃用;踏步骨架待 TIM6 配置 |
 | Pi Agent Software | ⏳ Pending |
 
 ### v1 板子当前状态(2026-09-09)
@@ -115,12 +115,19 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
  - `288b487` v1 PCB 8路舵机驱动验证(里程碑)
  - `faf46d0` 8路舵机标定 + UART 接收 Pi 命令接口
 - **当前 UART 命令**(2026-09-11):
- - `<id> <pulse>` 设单路舵机(0-7)、`all <pulse>` 设全部 8 路、`center` 设全部 1500(标定基线)、`stand` 设站立姿态
+ - `<id> <pulse>` 设单路舵机(0-7)、`all <pulse>` 设全部 8 路、`center` 设全部 1500(标定基线)、`stand` 设站立姿态(用 stand_pwm 数组)
+ - **标定模式**:`cal raw`(8 路舵机设 1500,机械零位)、`cal save`(保存当前为 STAND)、`cal show`(报告当前 STAND)
+ - **步态**:`step trot`(启动 trot 踏步,需 TIM6 配置)、`step stop`(停止踏步)
 - **已弃用(2026-09-11)**:
  - `sit` 蹲下姿态 — 对平衡性和舵机能力要求较高,偶尔卡死起不来,有风险先放弃
  - `h <delta_mm>` 身高控制 — 依赖 sit,一并删除;代码详见 git 历史 `feat(stm32):站立/蹲下姿态 + sit/stand UART 命令(2026-09-11)`
+- **踏步骨架(2026-09-11 写入,gait.c/h)**:
+ - 移植 PA_GAIT.trot + PA_IK.ik case=0 + PA_ATTITUDE.cal_ges 简化版
+ - 步态参数:抬腿 15mm / 100Hz 更新 / 步进 0.1 → 1 周期 100ms(10Hz 步态)
+ - **未完成**:CubeMX 加 TIM6 (Prescaler=16999, Period=99) + NVIC TIM6 global interrupt + stm32g4xx_it.c 加 TIM6_IRQHandler 调 gait_tick()
 - **待办**:
- - 移植 PA_GAIT.trot 踏步动作(x_target=0 即原地踏步)
+ - 标定 STAND(cal raw → 观察机械几何"大腿垂直小腿水平" → 微调 → cal save)
+ - 配置 TIM6 + 试跑 step trot
  - I2C 读 MPU-6500 IMU 数据(调试器读有干扰,实际应用应正常)
 
 ---
