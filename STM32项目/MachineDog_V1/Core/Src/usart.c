@@ -99,13 +99,6 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     PA9     ------> USART1_TX
     PA10     ------> USART1_RX
     */
-    /* === 2026-09-11 USART1 PA10 配置改回标准 AF_PP ===
-     * 多 agent 排查最终根因:
-     * 之前改的 GPIO_MODE_INPUT 让 HAL_GPIO_Init 跳过了 AFR 配置,
-     * 导致 USART1_RX 没有路由到 PA10 引脚,RXNE 永远不置位。
-     * 改回 AF_PP 让 HAL 正确写 AFR[AF7] = USART1_RX,USART 才能收到数据。
-     * AF_PP 在 RX 方向(USART 没有数据发送时)是输入路径,不会主动拉低 PA10。
-     */
     GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;

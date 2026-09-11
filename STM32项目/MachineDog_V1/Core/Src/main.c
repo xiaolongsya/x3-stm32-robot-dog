@@ -17,7 +17,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
-#include "gait.h"
+#include "stepping.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,8 +35,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-/* 8 路舵机 STAND PWM 常量已移至 main.h(供 gait.c 可见)
- * 运行时可通过 UART `cal save` 覆盖(写入 stand_pwm 数组)
+/* 8 路舵机 STAND PWM 常量在 main.h(SERVO_*_STAND)
+ * 2026-09-11 废弃 gait.c 后,STAND 不再运行时覆盖,改用常量直读
  */
 /* USER CODE END PV */
 
@@ -60,13 +60,12 @@ void SystemClock_Config(void);
  *  后小腿: servo0(BR), servo7(BL)
  */
 
-/* 当前 8 路舵机 PWM(每次 set_servo_pulse 时更新,供 cal save 用) */
-static uint16_t current_pwm[8];
+/* 当前 8 路舵机 PWM(2026-09-11 移除,cal save 废弃后不需要跟踪) */
 
-/* 非 static:供 gait.c 调(原型在 main.h) */
+/* 非 static:供未来 stepping 模块调用(原型在 main.h)
+ * 2026-09-11 移除 current_pwm 跟踪,gait.c 已删,无其他模块需要 */
 void set_servo_pulse(uint8_t id, uint16_t pulse) {
   if (pulse < 500 || pulse > 2500) return;
-  current_pwm[id] = pulse;
   switch (id) {
     case 0: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, pulse); break;
     case 1: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pulse); break;
@@ -84,23 +83,21 @@ void set_servo_pulse(uint8_t id, uint16_t pulse) {
  * SERVO_NEUTRAL_US 常量已在 main.h 定义
  */
 
-/* UART 接收命令解析(2026-09-11 扩展 +cal +step):
+/* UART 接收命令解析(2026-09-11):
  * 格式: "<servo_id> <pulse>\n"   例如 "0 1500\n"   -> 设 servo0=1500
  *       "all <pulse>\n"           设全部 8 路
  *       "center\n"                设全部 1500(居中,标定基线)
- *       "stand\n"                 站立姿态(用 stand_pwm 数组,可由 cal save 覆盖)
- *       "cal raw"                 8 路舵机设 1500(机械零位,开始标定)
- *       "cal save"                当前 8 路 PWM 保存为 STAND
- *       "cal show"                报告当前 STAND 数组
- *       "step trot"               启动 trot 踏步(原地抬腿落下,100Hz)
+ *       "stand\n"                 站立姿态(SERVO_*_STAND 常量)
+ *       "step trot"               启动原地踏步(100Hz TIM6,抬腿 10mm 保守值)
  *       "step stop"               停止踏步,回 STAND
+ *       "step show"               打印当前 ham/shank/8 路 PWM
  */
 static char rx_buf[32];
 static uint8_t rx_idx = 0;
 
 static void parse_uart_command(const char *cmd) {
   unsigned int id = 0, pulse = 0;
-  /* 用 strncmp 前置判别 "all" / "cal" / "step",避免 sscanf("%u %u") 误拦截 */
+  /* 用 strncmp 前置判别 "all" / "step",避免 sscanf("%u %u") 误拦截 */
   if (strncmp(cmd, "all ", 4) == 0) {
     if (sscanf(cmd + 4, "%u", &pulse) == 1) {
       if (pulse >= 500 && pulse <= 2500) {
@@ -112,31 +109,12 @@ static void parse_uart_command(const char *cmd) {
     } else {
       printf("ERR fmt\n");
     }
-  } else if (strcmp(cmd, "cal raw") == 0) {
-    /* 标定模式:8 路舵机直接设 1500 µs(机械零位)
-     * 用户观察机械几何(目标:大腿垂直地面,小腿水平向前)
-     * 然后用 <id> <pulse> 微调,最后 cal save 保存
-     * ⚠️ 直接调 __HAL_TIM_SET_COMPARE 绕过 set_servo_pulse,确保舵机真的收到 1500 */
-    __HAL_TIM_SET_COMPARE(&htim1,  TIM_CHANNEL_1, 1500);   /* PA8  = TIM1_CH1  = servo7 */
-    __HAL_TIM_SET_COMPARE(&htim2,  TIM_CHANNEL_1, 1500);   /* PA5  = TIM2_CH1  = servo3 */
-    __HAL_TIM_SET_COMPARE(&htim2,  TIM_CHANNEL_3, 1500);   /* PA2  = TIM2_CH3  = servo0 */
-    __HAL_TIM_SET_COMPARE(&htim2,  TIM_CHANNEL_4, 1500);   /* PA3  = TIM2_CH4  = servo1 */
-    __HAL_TIM_SET_COMPARE(&htim3,  TIM_CHANNEL_1, 1500);   /* PA6  = TIM3_CH1  = servo4 */
-    __HAL_TIM_SET_COMPARE(&htim3,  TIM_CHANNEL_2, 1500);   /* PA4  = TIM3_CH2  = servo2 */
-    __HAL_TIM_SET_COMPARE(&htim3,  TIM_CHANNEL_3, 1500);   /* PB0  = TIM3_CH3  = servo6 */
-    __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1500);   /* PA7  = TIM17_CH1 = servo5 */
-    /* 同步 current_pwm(避免 cal save 保存错的值) */
-    for (uint8_t i = 0; i < 8; i++) current_pwm[i] = 1500;
-    printf("OK cal raw: 8 servos at 1500 (direct HAL write)\n");
-  } else if (strcmp(cmd, "cal save") == 0) {
-    /* 把当前 8 路 PWM 保存为 STAND(运行时覆盖,无需重编译) */
-    gait_cal_save_stand_array(current_pwm);
-  } else if (strcmp(cmd, "cal show") == 0) {
-    gait_cal_show_stand();
   } else if (strcmp(cmd, "step trot") == 0) {
-    gait_start_trot();
+    stepping_start_trot();
   } else if (strcmp(cmd, "step stop") == 0) {
-    gait_stop();
+    stepping_stop();
+  } else if (strcmp(cmd, "step show") == 0) {
+    stepping_show();
   } else if (sscanf(cmd, "%u %u", &id, &pulse) == 2) {
     if (id <= 7) {
       set_servo_pulse((uint8_t)id, (uint16_t)pulse);
@@ -148,9 +126,15 @@ static void parse_uart_command(const char *cmd) {
     for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
     printf("OK center\n");
   } else if (strcmp(cmd, "stand") == 0) {
-    /* 站立姿态:从 stand_pwm 数组读取(默认从 SERVO_*_STAND 初始化,可被 cal save 覆盖) */
-    const uint16_t *sp = gait_get_stand_pwm();
-    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, sp[i]);
+    /* 站立姿态:从 SERVO_*_STAND 常量直接读取 */
+    set_servo_pulse(0, SERVO_SHIN_BR_STAND);
+    set_servo_pulse(1, SERVO_SHOULDER_BR_STAND);
+    set_servo_pulse(2, SERVO_SHIN_FR_STAND);
+    set_servo_pulse(3, SERVO_SHOULDER_FR_STAND);
+    set_servo_pulse(4, SERVO_SHOULDER_FL_STAND);
+    set_servo_pulse(5, SERVO_SHIN_FL_STAND);
+    set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
+    set_servo_pulse(7, SERVO_SHIN_BL_STAND);
     printf("OK stand\n");
   } else {
     /* 加回显便于调试 */
@@ -221,13 +205,19 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* === 上电默认姿态(2026-09-11 改)===
-   * 默认: 从 stand_pwm 数组读取 STAND(初值 = SERVO_*_STAND 常量,可被 cal save 覆盖)
-   * gait_init() 必须在 HAL_TIM_PWM_Start 之后调(否则 htim 还没启动)
+  /* === 上电默认姿态(2026-09-11)===
+   * 默认: 直接用 SERVO_*_STAND 常量写 8 路舵机 = 站立姿态
+   * stepping_init() 必须在 HAL_TIM_PWM_Start 之后调(虽然不上 TIM6)
    */
-  gait_init();
-  const uint16_t *sp = gait_get_stand_pwm();
-  for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, sp[i]);
+  stepping_init();
+  set_servo_pulse(0, SERVO_SHIN_BR_STAND);
+  set_servo_pulse(1, SERVO_SHOULDER_BR_STAND);
+  set_servo_pulse(2, SERVO_SHIN_FR_STAND);
+  set_servo_pulse(3, SERVO_SHOULDER_FR_STAND);
+  set_servo_pulse(4, SERVO_SHOULDER_FL_STAND);
+  set_servo_pulse(5, SERVO_SHIN_FL_STAND);
+  set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
+  set_servo_pulse(7, SERVO_SHIN_BL_STAND);
   /* USER CODE END 2 */
 
   /* Infinite loop */

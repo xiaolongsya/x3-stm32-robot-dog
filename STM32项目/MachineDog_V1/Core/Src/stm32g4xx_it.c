@@ -22,7 +22,7 @@
 #include "stm32g4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "gait.h"   /* 100Hz 步态 tick,在 TIM6_DAC_IRQHandler 里调 */
+#include "stepping.h"   /* 100Hz 步态 tick,在 TIM6_DAC_IRQHandler 里调 */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -205,7 +205,7 @@ void SysTick_Handler(void)
 void TIM6_DAC_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM6_DAC_IRQn 0 */
-  gait_tick();   /* 100Hz 步态推进(必须在 HAL_TIM_IRQHandler 之前调,确保不漏中断) */
+  stepping_tick();   /* 100Hz 步态推进(必须在 HAL_TIM_IRQHandler 之前调) */
   /* USER CODE END TIM6_DAC_IRQn 0 */
   HAL_TIM_IRQHandler(&htim6);
   /* USER CODE BEGIN TIM6_DAC_IRQn 1 */

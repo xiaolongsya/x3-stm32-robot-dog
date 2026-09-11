@@ -72,6 +72,15 @@ __tests__/
 data/tmp/
 scratch.*
 
+# ====================
+# 机器狗训练数据(2026-09-11 加)
+# 正负样本 WAV 文件,本地保留用于迭代训练,不入 git(单文件大 + 量大)
+# voice_data/
+#   ├── positive/   # "小龙" 正样本(WAV × 100)
+#   └── negative/   # 其他名字负样本(WAV × 50)
+# ====================
+voice_data/
+
 # 审查临时目录(2026-09-02 加)
 _review_tmp/
 gerber_review/

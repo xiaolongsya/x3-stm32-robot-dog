@@ -46,7 +46,6 @@ extern "C" {
  * 8 路舵机 STAND PWM 标定参数(2026-09-11,放顶部方便改)
  * ====================================================================
  * 标定目标: 大腿垂直地面 + 小腿水平向前(4 条腿都满足)
- * 可由 UART `cal save` 在运行时覆盖(无需重编译)
  *
  * PWM 方向影响(从舵机后方看):
  *   肩部 PWM 增大 → 大腿向后摆 → 身体变低
@@ -87,7 +86,7 @@ extern "C" {
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
-/* 8 路舵机 PWM 输出(供 gait.c 用)— 在 USER CODE 区外,CubeMX 重生成不会清 */
+/* 8 路舵机 PWM 输出 — 在 USER CODE 区外,CubeMX 重生成不会清 */
 void set_servo_pulse(uint8_t id, uint16_t pulse);
 
 /* USER CODE BEGIN EFP */
