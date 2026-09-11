@@ -89,7 +89,8 @@ extern "C" {
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+/* 8 路舵机 PWM 输出(供 gait.c 用,gait.c 调 8 路舵机)*/
+void set_servo_pulse(uint8_t id, uint16_t pulse);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
