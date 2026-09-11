@@ -34,6 +34,25 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+/* === 8 路舵机默认 PWM(2026-09-11)===
+ * 用户调试用:从这里直接改,烧录后立即生效(配合 Clean+Build)
+ * 方向约定(从舵机后方看):
+ *   右腿顺时针 = PWM 减小
+ *   右腿逆时针 = PWM 增大(但实际效果是腿伸直)
+ *   左腿逆时针 = PWM 增大
+ *   左腿顺时针 = PWM 减小
+ * 默认全 1500(标定基线)
+ */
+/* 4 路肩部舵机(180 度范围 500-2500) */
+#define SERVO_SHOULDER_BR   1500  /* PA3  = TIM2_CH4 = servo1 = BR 肩 */
+#define SERVO_SHOULDER_FR   1500  /* PA5  = TIM2_CH1 = servo3 = FR 肩 */
+#define SERVO_SHOULDER_FL   1500  /* PA6  = TIM3_CH1 = servo4 = FL 肩 */
+#define SERVO_SHOULDER_BL   1500  /* PB0  = TIM3_CH3 = servo6 = BL 肩 */
+/* 4 路小腿舵机 */
+#define SERVO_SHIN_BR        1500  /* PA2  = TIM2_CH3 = servo0 = BR 小腿 */
+#define SERVO_SHIN_FR        1500  /* PA4  = TIM3_CH2 = servo2 = FR 小腿 */
+#define SERVO_SHIN_FL        1500  /* PA7  = TIM17_CH1 = servo5 = FL 小腿 */
+#define SERVO_SHIN_BL        1500  /* PA8  = TIM1_CH1 = servo7 = BL 小腿 */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -227,14 +246,14 @@ int main(void)
    *   前腿(servo2/3 FR, servo4/5 FL):肩 ±100,小腿 −50/+50(前腿不弯太多)
    *   后腿(servo0/1 BR, servo6/7 BL):肩 ±200,小腿 −200/+200(后腿大幅弯)
    */
-  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, 1700);  /* PA8  = TIM1_CH1  = servo7 = BL 小腿(左,+200 后腿大) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 1400);  /* PA5  = TIM2_CH1  = servo3 = FR 肩 (右,−100) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, 1300);  /* PA2  = TIM2_CH3  = servo0 = BR 小腿(右,−200 后腿大) */
-  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, 1300);  /* PA3  = TIM2_CH4  = servo1 = BR 肩 (右,−200 后腿大) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, 1600);  /* PA6  = TIM3_CH1  = servo4 = FL 肩 (左,+100) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, 1450);  /* PA4  = TIM3_CH2  = servo2 = FR 小腿(右,−50 前腿小) */
-  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, 1700);  /* PB0  = TIM3_CH3  = servo6 = BL 肩 (左,+200 后腿大) */
-  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, 1550); /* PA7  = TIM17_CH1 = servo5 = FL 小腿(左,+50 前腿小) */
+  __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_1, SERVO_SHIN_BL);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, SERVO_SHOULDER_FR);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, SERVO_SHIN_BR);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, SERVO_SHOULDER_BR);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, SERVO_SHOULDER_FL);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, SERVO_SHIN_FR);
+  __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, SERVO_SHOULDER_BL);
+  __HAL_TIM_SET_COMPARE(&htim17, TIM_CHANNEL_1, SERVO_SHIN_FL);
   /* USER CODE END 2 */
 
   while (1)
