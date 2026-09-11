@@ -329,23 +329,18 @@ void stepping_start_trot(void) {
   stepping_apply_stand();
   step_state = STEPPING_TROT;
   step_t_phase = 0.0f;
-#ifdef HAL_TIM6_MODULE_ENABLED
+  /* TIM6 在 tim.c 已配(PSC=16999 / ARR=99 = 100Hz),无条件启动 */
   if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {
     printf("ERR stepping: TIM6 start failed\n");
     step_state = STEPPING_IDLE;
     return;
   }
   printf("OK trot started (T=100Hz, h=%.0fmm)\n", STEP_H_LIFT);
-#else
-  printf("ERR stepping: TIM6 not configured\n");
-  step_state = STEPPING_IDLE;
-#endif
 }
 
 void stepping_stop(void) {
-#ifdef HAL_TIM6_MODULE_ENABLED
+  /* TIM6 一定存在(tim.c 已配),无条件停 */
   HAL_TIM_Base_Stop_IT(&htim6);
-#endif
   step_state = STEPPING_IDLE;
   step_t_phase = 0.0f;
   stepping_apply_stand();

@@ -48,11 +48,10 @@ Thumbs.db
 .idea/
 
 # ====================
-# AI 协作文档 / 记忆(2026-09-02 加)
+# AI 协作文档(2026-09-02 加,KICKOFF_PROMPT 已删 2026-09-12)
 # 这些不是项目产物,只本地用
 # ====================
 CLAUDE.md
-KICKOFF_PROMPT.md
 
 # AI 记忆目录(通常在 ~/.claude/,本来就不在项目里,但保险起见)
 .claude/
@@ -77,7 +76,7 @@ scratch.*
 # 正负样本 WAV 文件,本地保留用于迭代训练,不入 git(单文件大 + 量大)
 # voice_data/
 #   ├── positive/   # "小龙" 正样本(WAV × 100)
-#   └── negative/   # 其他名字负样本(WAV × 50)
+#   └── negative/   # 其他名字负样本(WAV × 200)
 # ====================
 voice_data/
 
@@ -104,7 +103,4 @@ gerber_review/
 **/*.launch
 STM32项目/**/.settings/
 
-# CubeIDE 工程元数据(打开工程时会重新生成,不追踪)
-# STM32项目/**/.cproject
-# STM32项目/**/.project
-# STM32项目/**/*.mxproject
+# CubeIDE 工程元数据(.cproject / .project / .mxproject 已被跟踪,保留以便工程能打开)

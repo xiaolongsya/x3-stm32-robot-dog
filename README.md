@@ -31,11 +31,11 @@
              │ 115200 baud
 ┌────────────┴─────────────────────┐
 │ STM32G431 (real-time control)     │
-│ ├─ 8× MG90S servos (PA2~PA7 + PB0 + PB3) │
-│ ├─ MPU6050 IMU (1000Hz balance)     │
+│ ├─ 8× MG90S servos (PA2~PA7 + PB0 + PA8) │
+│ ├─ MPU6500 IMU (I2C1, PA15/SCL + PB7/SDA) │
 │ ├─ HC-SR04 ultrasonic (PB4/PB5)     │
 │ ├─ SSD1306 OLED display (I2C)       │
-│ ├─ Battery monitor (PA8 ADC)        │
+│ ├─ Battery monitor (PA0 ADC)        │
 │ └─ Buzzer (PA11 PWM)                │
 └──────────────────────────────────┘
 ```
@@ -63,15 +63,14 @@
 
 ## 📚 Documentation
 
-- [`CLAUDE.md`](CLAUDE.md) — AI collaboration rules, PCB workflow, technical guidelines
-- [`KICKOFF_PROMPT.md`](KICKOFF_PROMPT.md) — Prompt for starting new Claude sessions
-- [`网表/`](网表/) — KiCad-style netlists
-- [`数据手册/`](数据手册/) — IC datasheets
+- [`CLAUDE.md`](CLAUDE.md) — AI 协作规则 + 项目速览
+- [`网表/`](网表/) — 立创 EDA 网表
+- [`数据手册/`](数据手册/) — IC 数据手册
 
 ## 🚀 Quick Start
 
 1. Clone this repo
-2. Open `网表/Netlist_控制板_2026-09-01.tel` in your EDA tool (KiCad / Lceda)
+2. Open `网表/Netlist_控制板pcb_2026-09-02.tel` in your EDA tool (KiCad / EasyEDA)
 3. Generate Gerbers and order PCB from JLC
 4. Source components per BOM
 5. Solder (recommended order: power → MCU → sensors → connectors)
@@ -99,13 +98,13 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 | v1 PCB Layout | ✅ Complete (3 轮审查通过,0 阻断) |
 | v1 Fabrication | ✅ Complete |
 | v1 Board Bring-up | 🔧 In progress (新板子焊接中,旧板子调试损伤退役) |
-| STM32 Firmware | ✅ 站立姿态 + UART 命令接口 + 标定模式(cal raw/save/show);蹲下+身高控制已弃用;踏步骨架待 TIM6 配置 |
+| STM32 Firmware | ✅ 站立姿态 + UART 命令接口;踏步骨架已就绪(TIM6 100Hz 已配);IMU/I2C 暂未用 |
 | Pi Agent Software | ⏳ Pending |
 
 ### v1 板子当前状态(2026-09-09)
 
 - **二次焊接完成**:补焊 NRST 复位电路后,上电即跑(无需每次按 Reset)
-- **8 路舵机标定完成**:全部居中 (Pulse=1500, 90°) → 大腿水平 + 小腿垂直 (从 py-apple-dynamics 借鉴)
+- **8 路舵机标定完成**:全部居中 (Pulse=1500, 90°) → **大腿垂直地面 + 小腿水平向前**(用户实测 4 脚都承重,2026-09-11)
 - **固件进度**:
  - STM32CubeMX 8 外设配齐 (TIM1/2/3/17 × 8 路 PWM + I2C1 + USART1 + SWD)
  - SYSCLK = 168 MHz (HSE 8MHz × PLL ×42 / 2)
@@ -114,21 +113,20 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 - **commit 节点**:
  - `288b487` v1 PCB 8路舵机驱动验证(里程碑)
  - `faf46d0` 8路舵机标定 + UART 接收 Pi 命令接口
-- **当前 UART 命令**(2026-09-11):
- - `<id> <pulse>` 设单路舵机(0-7)、`all <pulse>` 设全部 8 路、`center` 设全部 1500(标定基线)、`stand` 设站立姿态(用 stand_pwm 数组)
- - **标定模式**:`cal raw`(8 路舵机设 1500,机械零位)、`cal save`(保存当前为 STAND)、`cal show`(报告当前 STAND)
- - **步态**:`step trot`(启动 trot 踏步,需 TIM6 配置)、`step stop`(停止踏步)
+- **当前 UART 命令**(2026-09-11 实测):
+ - `<id> <pulse>` 设单路舵机(0-7)、`all <pulse>` 设全部 8 路、`center` 设全部 1500(标定基线)、`stand` 设站立姿态(SERVO_*_STAND 常量)、`sit` 8 路回 1500(等同 center,代码里还保留,几何意义仅是"伸直居中")
+ - **步态**:`step trot`(启动 trot 踏步,TIM6 100Hz 已配)、`step stop`(停止踏步)、`step show`(打印当前 ham/shank/8 路 PWM)
 - **已弃用(2026-09-11)**:
- - `sit` 蹲下姿态 — 对平衡性和舵机能力要求较高,偶尔卡死起不来,有风险先放弃
- - `h <delta_mm>` 身高控制 — 依赖 sit,一并删除;代码详见 git 历史 `feat(stm32):站立/蹲下姿态 + sit/stand UART 命令(2026-09-11)`
-- **踏步骨架(2026-09-11 写入,gait.c/h)**:
+ - `cal raw/save/show` 标定命令(代码已删,2026-09-11 commit a810cce 后)
+ - `h <delta_mm>` 身高控制(代码已删,见 git 历史 `feat(stm32):站立/蹲下姿态 + sit/stand UART 命令(2026-09-11)`)
+- **踏步骨架(2026-09-11 写入,stepping.c/h,2026-09-12 修 TIM6 启动)**:
  - 移植 PA_GAIT.trot + PA_IK.ik case=0 + PA_ATTITUDE.cal_ges 简化版
- - 步态参数:抬腿 15mm / 100Hz 更新 / 步进 0.1 → 1 周期 100ms(10Hz 步态)
- - **未完成**:CubeMX 加 TIM6 (Prescaler=16999, Period=99) + NVIC TIM6 global interrupt + stm32g4xx_it.c 加 TIM6_IRQHandler 调 gait_tick()
+ - 步态参数:抬腿 10mm / TIM6 100Hz / 步进 0.01 → 1 周期 1s(1Hz 步态)
+ - TIM6 配置:Prescaler=16999、Period=99、NVIC TIM6_DAC_IRQn 已使能 → 100Hz
+ - TIM6 中断已在 stm32g4xx_it.c 调 stepping_tick()
 - **待办**:
- - 标定 STAND(cal raw → 观察机械几何"大腿垂直小腿水平" → 微调 → cal save)
- - 配置 TIM6 + 试跑 step trot
- - I2C 读 MPU-6500 IMU 数据(调试器读有干扰,实际应用应正常)
+ - 试跑 step trot(TIM6 启动 bug 已修,但实测前不要直接跑 — 舵机可能跳变,先开电源用手扶住)
+ - I2C 读 MPU-6500 IMU 数据(代码里 i2c.c 已配,但没有任何 HAL_I2C_* 调用)
 
 ---
 
