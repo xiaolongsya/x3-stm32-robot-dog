@@ -199,6 +199,10 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
+  /* ⚠️ 2026-09-12 no-reply 修复:禁用 stdout 缓冲
+   * 否则 newlib 可能把 printf 输出缓存在 FILE 里,直到 \n 才 flush,
+   * 期间如果进程卡死,数据全丢 */
+  setvbuf(stdout, NULL, _IONBF, 0);
   /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit -> 必须手动启动 HAL_TIM_PWM_Start */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);    /* PA8  = TIM1_CH1 = servo7 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);    /* PA5  = TIM2_CH1 = servo3 */

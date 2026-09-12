@@ -147,17 +147,18 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 #include <stdio.h>
 
 int fputc(int ch, FILE *f) {
-  /* 改回 HAL_MAX_DELAY:之前 5ms 短超时导致字符丢失
-   * Pi 端收到的是断裂的字符串,readline 永远等不到 \n
-   * HAL_MAX_DELAY 不会真死锁(USART TX 16 字节 buffer 瞬间可写) */
-  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  /* 2026-09-12 改:while 强制重试,防御 gState=BUSY 时 HAL_UART_Transmit
+   * 返回 HAL_BUSY 静默丢字符的 bug */
+  while (HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY) != HAL_OK);
   return ch;
 }
 
 /* syscalls.c::_write 调 __io_putchar(weak),printf 实际走这条路
  * 必须实现,否则 printf 输出被吞 */
 int __io_putchar(int ch) {
-  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+  /* 2026-09-12 改:while 强制重试,防御 gState=BUSY 时 HAL_UART_Transmit
+   * 返回 HAL_BUSY 静默丢字符的 bug(本次 no-reply 修复) */
+  while (HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, HAL_MAX_DELAY) != HAL_OK);
   return ch;
 }
 
