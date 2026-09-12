@@ -3,7 +3,7 @@
 
 设计目的:
   step trot 不动,通讯 OK(sit/stand 已验证)。
-  分步调试:把抬腿动作拆到单舵机单关节,逐步看机器狗反应,定位问题。
+  分步调试:按腿顺序(左前 → 右前 → 左后 → 右后),每条腿先大腿后小腿。
 
 用法:
   python3 step_debug.py [H_LIFT_MM]
@@ -16,8 +16,7 @@ H_LIFT_MM:
 示例:
   python3 step_debug.py            # 默认 H_LIFT=10mm
   python3 step_debug.py 5          # 5mm(原 commit 753e686 默认)
-  python3 step_debug.py 15         # 15mm(逼近 SERVO_LIMIT)
-  H_LIFT=20 python3 step_debug.py  # 环境变量
+  python3 step_debug.py 20         # 20mm(FR/FL 小腿临界,余量 20µs)
 
 交互:
   [enter]         执行当前预命令 + 自动跳到下一步
@@ -25,18 +24,11 @@ H_LIFT_MM:
   [任意文本]      当作 STM32 命令发送(不跳步,可重复测同一动作)
   [q]            退出(自动回 STAND)
 
-预设步骤按"从小到大"递进:
+预设步骤按"单腿"递进(用户拍板 2026-09-12):
   - 0~1:   起始 / STAND 确认
-  - 2~13:  单关节测试(每对角线的大腿/小腿各 +DS/-DS)
-  - 14~25: 单腿全收测试(每条腿的肩+小腿一起动)
+  - 2~13:  单腿单关节测试(左前 → 右前 → 左后 → 右后,每条腿:大腿 → 小腿 → 回 STAND)
+  - 14~25: 单腿全收测试(同腿顺序)
   - 26~29: step trot 实测(用 STM32 固件里的 H_LIFT)
-
-注意:
-  - 不依赖 STM32 printf 回执(no-reply bug)
-  - 用户眼睛看机器狗判断动作对不对
-  - Ctrl+C 或 q 都会进 finally 回 STAND
-  - step trot 那一步用 STM32 固件的 H_LIFT(不是这里设的)
-    如要 Pi 完全控制 trot,用 pi_remote_trot.py
 
 环境变量:
   KWS_UART   串口设备(默认 /dev/ttyS1)
@@ -54,17 +46,26 @@ H_LIFT_MM = float(sys.argv[1]) if len(sys.argv) > 1 else float(os.environ.get("H
 PWM_PER_MM = 4.0
 DS_PWM = H_LIFT_MM * PWM_PER_MM  # 远场近似 1mm ≈ 4µs
 
-# === 8 路舵机表 (2026-09-12 实测) ===
+# === 8 路舵机表 (2026-09-12 实测,舵机名用中文) ===
+# 腿分布(用户拍板):
+#   前腿: 左前 FL (肩=id 4, 小腿=id 5)
+#         右前 FR (肩=id 3, 小腿=id 2)
+#   后腿: 左后 BL (肩=id 6, 小腿=id 7)
+#         右后 BR (肩=id 1, 小腿=id 0)
+#
+# 收腿 = 身体降低方向:
+#   - 右腿 (FR/BR): PWM 减 (前后舵机反向安装)
+#   - 左腿 (FL/BL): PWM 增
 SERVOS = [
-    # (id, name, stand, is_right, safe_min, safe_max)
-    (0, "BR 小腿", 1600, True,  1400, 1600),
-    (1, "BR 肩",   1150, True,  1000, 2000),
-    (2, "FR 小腿", 1500, True,  1400, 1600),
-    (3, "FR 肩",   1200, True,  1000, 2000),
-    (4, "FL 肩",   1820, False, 1000, 2000),
-    (5, "FL 小腿", 1500, False, 1400, 1600),
-    (6, "BL 肩",   1850, False, 1000, 2000),
-    (7, "BL 小腿", 1400, False, 1400, 1600),
+    # (id, 中文名,         STAND, is_right, safe_min, safe_max)
+    (0, "右后小腿 (BR)",   1600, True,  1400, 1600),
+    (1, "右后肩 (BR)",     1150, True,  1000, 2000),
+    (2, "右前小腿 (FR)",   1500, True,  1400, 1600),
+    (3, "右前肩 (FR)",     1200, True,  1000, 2000),
+    (4, "左前肩 (FL)",     1820, False, 1000, 2000),
+    (5, "左前小腿 (FL)",   1500, False, 1400, 1600),
+    (6, "左后肩 (BL)",     1850, False, 1000, 2000),
+    (7, "左后小腿 (BL)",   1400, False, 1400, 1600),
 ]
 
 
@@ -75,63 +76,63 @@ def lift_pwm(id):
 
 
 def make_steps():
-    """根据 H_LIFT 生成步骤列表"""
+    """根据 H_LIFT 生成步骤列表(按腿顺序:左前 → 右前 → 左后 → 右后)"""
     DS = int(DS_PWM)
 
-    # 各舵机 swing 峰值
-    fr_sh   = SERVOS[3][2] - DS   # FR 肩
-    fr_shin = SERVOS[2][2] - DS   # FR 小腿
-    bl_sh   = SERVOS[6][2] + DS   # BL 肩
-    bl_shin = SERVOS[7][2] + DS   # BL 小腿
-    br_sh   = SERVOS[1][2] - DS   # BR 肩
-    br_shin = SERVOS[0][2] - DS   # BR 小腿
-    fl_sh   = SERVOS[4][2] + DS   # FL 肩
-    fl_shin = SERVOS[5][2] + DS   # FL 小腿
+    # 各舵机 swing 极值
+    LF_sh   = SERVOS[4][2] + DS   # 左前肩 1820+DS
+    LF_shin = SERVOS[5][2] + DS   # 左前小腿 1500+DS
+    RF_sh   = SERVOS[3][2] - DS   # 右前肩 1200-DS
+    RF_shin = SERVOS[2][2] - DS   # 右前小腿 1500-DS
+    LB_sh   = SERVOS[6][2] + DS   # 左后肩 1850+DS
+    LB_shin = SERVOS[7][2] + DS   # 左后小腿 1400+DS
+    RB_sh   = SERVOS[1][2] - DS   # 右后肩 1150-DS
+    RB_shin = SERVOS[0][2] - DS   # 右后小腿 1600-DS
 
     return [
         # 0-1: 起始
         ("0. all 1500 (8 路全中位,确认基本通讯)",          'all 1500',  None),
         ("1. stand (8 路 → STAND 实测 PWM)",               'stand',     None),
 
-        # 2-4: 1,3 脚大腿(对角线 1)
-        (f"2. FR 肩 → {fr_sh} (1200-{DS},右腿收腿方向)",   f'3 {fr_sh}',   None),
-        (f"3. BL 肩 → {bl_sh} (1850+{DS},左腿收腿方向)",   f'6 {bl_sh}',   None),
-        ("4. 回 STAND (验证 1,3 脚肩收腿方向)",           'stand',     None),
+        # 2-4: 左前 (FL) — 大腿 → 小腿 → 回 STAND
+        (f"2. 左前肩 → {LF_sh} (1820+{DS},左腿收腿方向)",      f'4 {LF_sh}',   None),
+        (f"3. 左前小腿 → {LF_shin} (1500+{DS},左腿收腿方向)",    f'5 {LF_shin}', None),
+        ("4. 回 STAND (左前测试完)",                       'stand',     None),
 
-        # 5-7: 1,3 脚小腿
-        (f"5. FR 小腿 → {fr_shin} (1500-{DS},右腿收腿方向)", f'2 {fr_shin}', None),
-        (f"6. BL 小腿 → {bl_shin} (1400+{DS},左腿收腿方向)", f'7 {bl_shin}', None),
-        ("7. 回 STAND (验证 1,3 脚小腿收腿方向)",         'stand',     None),
+        # 5-7: 右前 (FR)
+        (f"5. 右前肩 → {RF_sh} (1200-{DS},右腿收腿方向)",      f'3 {RF_sh}',   None),
+        (f"6. 右前小腿 → {RF_shin} (1500-{DS},右腿收腿方向)",    f'2 {RF_shin}', None),
+        ("7. 回 STAND (右前测试完)",                       'stand',     None),
 
-        # 8-10: 2,4 脚大腿(对角线 2)
-        (f"8. BR 肩 → {br_sh} (1150-{DS},右腿收腿方向)",   f'1 {br_sh}',   None),
-        (f"9. FL 肩 → {fl_sh} (1820+{DS},左腿收腿方向)",   f'4 {fl_sh}',   None),
-        ("10. 回 STAND (验证 2,4 脚肩收腿方向)",          'stand',     None),
+        # 8-10: 左后 (BL)
+        (f"8. 左后肩 → {LB_sh} (1850+{DS},左腿收腿方向)",      f'6 {LB_sh}',   None),
+        (f"9. 左后小腿 → {LB_shin} (1400+{DS},左腿收腿方向)",    f'7 {LB_shin}', None),
+        ("10. 回 STAND (左后测试完)",                      'stand',     None),
 
-        # 11-13: 2,4 脚小腿
-        (f"11. BR 小腿 → {br_shin} (1600-{DS},右腿收腿方向)", f'0 {br_shin}', None),
-        (f"12. FL 小腿 → {fl_shin} (1500+{DS},左腿收腿方向)", f'5 {fl_shin}', None),
-        ("13. 回 STAND (验证 2,4 脚小腿收腿方向)",        'stand',     None),
+        # 11-13: 右后 (BR)
+        (f"11. 右后肩 → {RB_sh} (1150-{DS},右腿收腿方向)",     f'1 {RB_sh}',   None),
+        (f"12. 右后小腿 → {RB_shin} (1600-{DS},右腿收腿方向)",   f'0 {RB_shin}', None),
+        ("13. 回 STAND (右后测试完)",                      'stand',     None),
 
-        # 14-16: 单腿 1 (FR) 全收
-        (f"14. FR 肩 收 {DS}",                              f'3 {fr_sh}',   None),
-        (f"15. FR 小腿 收 {DS}",                            f'2 {fr_shin}', None),
-        ("16. 回 STAND (FR 全收测试完)",                   'stand',     None),
+        # 14-17: 左前 全收测试
+        (f"14. 左前肩 收 {DS}",                              f'4 {LF_sh}',   None),
+        (f"15. 左前小腿 收 {DS}",                            f'5 {LF_shin}', None),
+        ("16. 回 STAND (左前全收测试完)",                   'stand',     None),
 
-        # 17-19: 单腿 3 (BL) 全收
-        (f"17. BL 肩 收 {DS}",                              f'6 {bl_sh}',   None),
-        (f"18. BL 小腿 收 {DS}",                            f'7 {bl_shin}', None),
-        ("19. 回 STAND (BL 全收测试完)",                   'stand',     None),
+        # 17-19: 右前 全收
+        (f"17. 右前肩 收 {DS}",                              f'3 {RF_sh}',   None),
+        (f"18. 右前小腿 收 {DS}",                            f'2 {RF_shin}', None),
+        ("19. 回 STAND (右前全收测试完)",                   'stand',     None),
 
-        # 20-22: 单腿 2 (FL) 全收
-        (f"20. FL 肩 收 {DS}",                              f'4 {fl_sh}',   None),
-        (f"21. FL 小腿 收 {DS}",                            f'5 {fl_shin}', None),
-        ("22. 回 STAND (FL 全收测试完)",                   'stand',     None),
+        # 20-22: 左后 全收
+        (f"20. 左后肩 收 {DS}",                              f'6 {LB_sh}',   None),
+        (f"21. 左后小腿 收 {DS}",                            f'7 {LB_shin}', None),
+        ("22. 回 STAND (左后全收测试完)",                   'stand',     None),
 
-        # 23-25: 单腿 4 (BR) 全收
-        (f"23. BR 肩 收 {DS}",                              f'1 {br_sh}',   None),
-        (f"24. BR 小腿 收 {DS}",                            f'0 {br_shin}', None),
-        ("25. 回 STAND (BR 全收测试完)",                   'stand',     None),
+        # 23-25: 右后 全收
+        (f"23. 右后肩 收 {DS}",                              f'1 {RB_sh}',   None),
+        (f"24. 右后小腿 收 {DS}",                            f'0 {RB_shin}', None),
+        ("25. 回 STAND (右后全收测试完)",                   'stand',     None),
 
         # 26-29: 完整踏步测试(用 STM32 固件 H_LIFT,与脚本参数无关)
         ("26. step trot (启动踏步,STM32 固件 H_LIFT)",   'step trot', None),
@@ -148,16 +149,17 @@ def print_header(steps):
     print(f"UART: {UART_DEV} @ {UART_BAUD}", flush=True)
     print(f"H_LIFT: {H_LIFT_MM} mm  (PWM 偏移: {DS_PWM:.0f} µs / 关节)", flush=True)
     print(f"背景:step trot 不动 / sit/stand 通讯 OK / 分步定位问题", flush=True)
+    print(f"腿顺序:左前 → 右前 → 左后 → 右后 (每条腿:大腿 → 小腿 → 回 STAND)", flush=True)
     print("", flush=True)
 
     # 打印 SERVO 表
-    print("8 路舵机表:", flush=True)
-    print(f"  {'id':<3} {'名称':<8} {'STAND':<6} {'方向':<8} {'收腿 PWM':<10} {'limit':<12}", flush=True)
+    print("8 路舵机表(中文名):", flush=True)
+    print(f"  {'id':<3} {'中文名':<18} {'STAND':<6} {'方向':<8} {'收腿 PWM':<10} {'limit':<12}", flush=True)
     for s in SERVOS:
         id, name, stand, is_right, smin, smax = s
-        dir_str = "右(PWM-)" if is_right else "左(PWM+)"
+        dir_str = "右腿(PWM-)" if is_right else "左腿(PWM+)"
         lp = lift_pwm(id)
-        print(f"  {id:<3} {name:<8} {stand:<6} {dir_str:<8} {lp:<10} ({smin},{smax})", flush=True)
+        print(f"  {id:<3} {name:<18} {stand:<6} {dir_str:<10} {lp:<10} ({smin},{smax})", flush=True)
     print("", flush=True)
 
     # 打印步骤列表
