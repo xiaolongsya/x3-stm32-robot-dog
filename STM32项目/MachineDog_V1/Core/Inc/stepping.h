@@ -11,7 +11,7 @@
   *   - ISR 内不 printf(避免阻塞 UART,修 MEDIUM 风险)
   *
   * 参数(2026-09-12 拍板):
-  *   - H_LIFT     = 5 mm
+  *   - H_LIFT     = 10 mm (2026-09-12 ×2 调试,原 5mm 微弱肉眼难辨)
   *   - PWM_PER_MM = 4
   *   - T          = 2.0 s(周期)
   *   - 半周期     = 1.0 s(一只 swing 周期)

@@ -60,7 +60,7 @@
 extern TIM_HandleTypeDef htim6;
 
 /* === 参数(2026-09-12 用户拍板)====================================*/
-#define STEP_H_LIFT_MM    5.0f    /* 抬腿高度 (mm) */
+#define STEP_H_LIFT_MM    10.0f   /* 抬腿高度 (mm), 2026-09-12 ×2 调试(原 5mm 微弱) */
 #define STEP_PWM_PER_MM   4.0f    /* 远场近似 1mm ≈ 4µs PWM 调整 */
 #define STEP_T_INC        0.005f  /* 每 tick 相位增量,周期 2.0s @ 100Hz */
 #define STEP_TF           0.5f    /* 半周期 (对角 trot) */
