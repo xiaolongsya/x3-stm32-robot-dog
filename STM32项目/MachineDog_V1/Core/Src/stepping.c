@@ -8,7 +8,8 @@
   *   - 完全抛弃 PA-apple IK + py-apple swing 曲线
   *   - 抬腿 = 收腿 = 右腿 PWM 减 + 左腿 PWM 增
   *   - 抬腿曲线:sin²(π × phase/0.5),边界连续无跳变
-  *   - ISR 内不 printf(避免阻塞 UART,与 Pi no-reply bug 同源问题)
+  *   - ISR 内不 printf(避免阻塞 UART)
+  *   - stepping_*() 也不 printf(2026-09-12 进一步修)
   *
   * 参数(2026-09-12 用户拍板):
   *   - H_LIFT     = 5 mm   (保守起步)
@@ -16,9 +17,9 @@
   *   - PWM_PER_MM = 4      (远场近似实测 1mm ≈ 4µs)
   *
   * UART 命令(兼容旧接口,在 main.c parse_uart_command 注册):
-  *   step trot    启动原地踏步(主循环调用,可 printf)
-  *   step stop    停止踏步,回 STAND(主循环调用,可 printf)
-  *   step show    打印当前 phase + h + 8 路 PWM(主循环调用,可 printf)
+  *   step trot    启动原地踏步(主循环,无 printf)
+  *   step stop    停止踏步,回 STAND(主循环,无 printf)
+  *   step show    空函数(原 printf 调试已禁用,接口保留)
   *
   * 腿编号约定(对角 trot):
   *   腿 1 = FR (小腿=id 2, 肩=id 3)
@@ -38,12 +39,15 @@
   *   - 第一帧(phase=0)自动是 STAND(sin²(0)=0,ds_pwm=0)
   *   - SERVO_LIMIT clamp 防止越界
   *   - ISR 内不 printf,避免阻塞 UART
+  *   - stepping_*() 不 printf,防 printf 卡死 main loop 阻断 step stop
+  *     (即使 ISR 还在跑,用户无法发 stop,只能断电)
   *
   * 多 agent 审查(2026-09-12):
   *   - 8 路 PWM 全程在 SERVO_LIMIT 内 ✓
   *   - 启动无跳变(phase=0 → STAND)✓
   *   - PWM 变化率峰值 62.8µs/秒(SG90 slew rate 跟得上)✓
   *   - ISR 不 printf 修 MEDIUM 风险 ✓
+  *   - stepping_*() 不 printf 修 printf 卡死 main loop 风险 ✓
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -51,7 +55,9 @@
 #include "stepping.h"
 #include "main.h"
 #include <math.h>
-#include <stdio.h>
+
+/* htim6 在 tim.c 定义,stepping.c 引用(TIM6 100Hz 步态中断) */
+extern TIM_HandleTypeDef htim6;
 
 /* === 参数(2026-09-12 用户拍板)====================================*/
 #define STEP_H_LIFT_MM    5.0f    /* 抬腿高度 (mm) */
@@ -190,26 +196,23 @@ void stepping_init(void) {
 }
 
 void stepping_start_trot(void) {
-  /* ⚠️ 主循环调用 — 可 printf */
+  /* 主循环调用 — 不 printf (2026-09-12 防 printf 阻塞 UART 卡死 main loop) */
   stepping_apply_stand();
   step_state = STEPPING_TROT;
   step_t_phase = 0.0f;
 
   if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {
-    printf("ERR stepping: TIM6 start failed\n");
     step_state = STEPPING_IDLE;
     return;
   }
-  printf("OK trot started (T=2.0s, h=5mm)\n");
 }
 
 void stepping_stop(void) {
-  /* ⚠️ 主循环调用 — 可 printf */
+  /* 主循环调用 — 不 printf (2026-09-12 防 printf 阻塞 UART 卡死 main loop) */
   HAL_TIM_Base_Stop_IT(&htim6);
   step_state = STEPPING_IDLE;
   step_t_phase = 0.0f;
   stepping_apply_stand();
-  printf("OK trot stopped, returned to STAND\n");
 }
 
 void stepping_tick(void) {
@@ -227,9 +230,11 @@ SteppingState stepping_get_state(void) {
 }
 
 void stepping_show(void) {
-  /* ⚠️ 主循环调用 — 可 printf (给 USB 串口观察用) */
-  printf("phase=%.3f h=%.2fmm pwm=[%u,%u,%u,%u,%u,%u,%u,%u]\n",
-         dbg_phase, dbg_h_mm,
-         dbg_pwm[0], dbg_pwm[1], dbg_pwm[2], dbg_pwm[3],
-         dbg_pwm[4], dbg_pwm[5], dbg_pwm[6], dbg_pwm[7]);
+  /* 调试接口(主循环) — 临时禁用 printf (2026-09-12 防阻塞 main loop)
+   * 修 usart.c __io_putchar 短 timeout 后可恢复:
+   *   printf("phase=%.3f h=%.2fmm pwm=[%u,%u,%u,%u,%u,%u,%u,%u]\n",
+   *          dbg_phase, dbg_h_mm,
+   *          dbg_pwm[0], dbg_pwm[1], dbg_pwm[2], dbg_pwm[3],
+   *          dbg_pwm[4], dbg_pwm[5], dbg_pwm[6], dbg_pwm[7]);
+   */
 }
