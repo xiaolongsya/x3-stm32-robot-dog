@@ -226,6 +226,13 @@ int main(void)
   set_servo_pulse(5, SERVO_SHIN_FL_STAND);
   set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
   set_servo_pulse(7, SERVO_SHIN_BL_STAND);
+
+  /* === 2026-09-12 no-reply 调试自检 ===
+   * 上电立刻发几条 printf,逻辑分析仪抓 PA9 波形验证 printf 通路
+   * 不依赖 Pi 发命令,纯 STM32 自检 */
+  printf("STM32 BOOT OK\n");
+  printf("HCLK=%lu MHz\n", HAL_RCC_GetSysClockFreq() / 1000000);
+  printf("READY\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -244,6 +251,15 @@ int main(void)
      * 115200 baud 字节间隔 ~87µs,主循环跑得够快就能完整接收。
      */
     uart_poll();
+
+    /* === 2026-09-12 no-reply 调试 ===
+     * 每秒发一次 'PING' 让逻辑分析仪抓 PA9 持续波形
+     * 修好后删除这块 + 上电自检那三行 */
+    static uint32_t last_ping = 0;
+    if (HAL_GetTick() - last_ping >= 1000) {
+      last_ping = HAL_GetTick();
+      printf("PING\n");
+    }
   /* USER CODE END 3 */
   }
 }
