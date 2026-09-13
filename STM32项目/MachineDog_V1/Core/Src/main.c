@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "stepping.h"
+#include "motions.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -213,9 +214,11 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* === 上电默认姿态(2026-09-11)===
-   * 默认: 直接用 SERVO_*_STAND 常量写 8 路舵机 = 站立姿态
-   * stepping_init() 必须在 HAL_TIM_PWM_Start 之后调(虽然不上 TIM6)
+  /* === 上电默认姿态(2026-09-13 重构)===
+   * 1) stepping_init() 初始化步态状态机(暂不启 TIM6,等 motion 触发)
+   * 2) 写 8 路舵机 = STAND 常量 = 站立姿态
+   * 3) motion_init() 装载 MOTION_ID 选中的动作(无通信模式默认 = MOTION_STAND)
+   *    后续若改 MOTION_ID = MOTION_TROT 会 10s 后自动开 trot
    */
   stepping_init();
   set_servo_pulse(0, SERVO_SHIN_BR_STAND);
@@ -226,13 +229,7 @@ int main(void)
   set_servo_pulse(5, SERVO_SHIN_FL_STAND);
   set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
   set_servo_pulse(7, SERVO_SHIN_BL_STAND);
-
-  /* === 2026-09-12 no-reply 调试自检 ===
-   * 上电立刻发几条 printf,逻辑分析仪抓 PA9 波形验证 printf 通路
-   * 不依赖 Pi 发命令,纯 STM32 自检 */
-  printf("STM32 BOOT OK\n");
-  printf("HCLK=%lu MHz\n", HAL_RCC_GetSysClockFreq() / 1000000);
-  printf("READY\n");
+  motion_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -242,24 +239,12 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* === 修复 2026-09-11 ===
-     * 原 bug: HAL_Delay(10) + timeout=0 + FIFO 关闭 → 7 字节命令 0.6ms
-     * 全部到齐时只有第 1 字节留住,后面 6 字节溢出丢失,永远拼不出
-     * 完整命令,永远不回复。
-     *
-     * 修复: 取消 HAL_Delay, 主循环尽可能快地轮询接收。
-     * 115200 baud 字节间隔 ~87µs,主循环跑得够快就能完整接收。
+    /* === 主循环(2026-09-13)===
+     * 1) motion_poll():推进动作状态机(无通信模式的关键,负责 start_delay 后启动 trot)
+     * 2) uart_poll():UART 命令接口,后续 X3 上线后仍用这个发命令
      */
+    motion_poll();
     uart_poll();
-
-    /* === 2026-09-12 no-reply 调试 ===
-     * 每秒发一次 'PING' 让逻辑分析仪抓 PA9 持续波形
-     * 修好后删除这块 + 上电自检那三行 */
-    static uint32_t last_ping = 0;
-    if (HAL_GetTick() - last_ping >= 1000) {
-      last_ping = HAL_GetTick();
-      printf("PING\n");
-    }
   /* USER CODE END 3 */
   }
 }
