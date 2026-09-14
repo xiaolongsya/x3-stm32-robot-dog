@@ -214,21 +214,23 @@ int main(void)
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
   HAL_TIM_PWM_Start(&htim17, TIM_CHANNEL_1);   /* PA7  = TIM17_CH1 = servo5 */
 
-  /* === 上电默认姿态(2026-09-13 重构)===
+  /* === 上电默认姿态(2026-09-14 整理)===
    * 1) stepping_init() 初始化步态状态机(暂不启 TIM6,等 motion 触发)
-   * 2) 写 8 路舵机 = STAND 常量 = 站立姿态
-   * 3) motion_init() 装载 MOTION_ID 选中的动作(无通信模式默认 = MOTION_STAND)
-   *    后续若改 MOTION_ID = MOTION_TROT 会 10s 后自动开 trot
+   * 2) motion_init() 装载 MOTION_ID + 启动对应动作:
+   *    - 先写 8 路 = SERVO_NEUTRAL_US(1500) 作为安全起点
+   *    - 调 current->setup() 跳到对应姿态(STAND / TROT_STAND / SIT)
+   *
+   * 默认动作(MOTION_ID = MOTION_TROT,踏步测试):
+   *    - 上电:8 路跳 TROT_STAND(中立位,无前倾)
+   *    - 5s 后启动 stepping 对角 trot
+   *    - 30s 后踏步结束,8 路回 STAND
+   *
+   * 切换其他模式:改 motions.h 的 MOTION_ID
+   *    MOTION_STAND    :上电跳 STAND 后保持
+   *    MOTION_BOB      :上电跳 STAND,5s 后蹲下,5s 后回 STAND,循环
+   *    MOTION_SHIN_TEST:8 路同步线性 ramp 测小腿范围
    */
   stepping_init();
-  set_servo_pulse(0, SERVO_SHIN_BR_STAND);
-  set_servo_pulse(1, SERVO_SHOULDER_BR_STAND);
-  set_servo_pulse(2, SERVO_SHIN_FR_STAND);
-  set_servo_pulse(3, SERVO_SHOULDER_FR_STAND);
-  set_servo_pulse(4, SERVO_SHOULDER_FL_STAND);
-  set_servo_pulse(5, SERVO_SHIN_FL_STAND);
-  set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
-  set_servo_pulse(7, SERVO_SHIN_BL_STAND);
   motion_init();
   /* USER CODE END 2 */
 

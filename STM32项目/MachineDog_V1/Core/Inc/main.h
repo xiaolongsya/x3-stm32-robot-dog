@@ -43,7 +43,7 @@ extern "C" {
 /* USER CODE BEGIN EC */
 
 /* ====================================================================
- * 8 路舵机 STAND PWM 标定参数(2026-09-11 实测 4 脚承重,2026-09-12 立约定)
+ * 8 路舵机 STAND PWM 标定参数(2026-09-11 实测 4 脚承重,2026-09-14 整理)
  * ====================================================================
  * 标定目标: 大腿垂直地面 + 小腿水平向前(4 条腿都满足)
  *
@@ -61,39 +61,46 @@ extern "C" {
  *   - 机械反装:左/右舵机 PWM 方向相反
  *       右舵机:P 减 = 往后转(肩平衡 / 小腿升)
  *       左舵机:P 增 = 往后转(肩平衡 / 小腿升)
- *   - 8 路 STAND 全部满足:4 肩平衡姿态 + 4 小腿极限伸展 ✅
  *
- *   完整对照表:
+ * ★★★ 2 个特殊舵机(机械装配偏差)2026-09-14 用户拍板:
+ *   id=4 FL 肩:相对其他标准舵机 +100 偏置
+ *   id=7 BL 小腿:相对其他标准舵机 +80 偏置
+ *   以后统一改 8 个 STAND 时,这两个单独调整,其他 6 个走标准值
+ *
+ *   完整对照表(2026-09-14 最新):
  *     id=0 BR 小腿  STAND=1600  P 增=往后转(升), P 减=往前转(降)
- *     id=1 BR 肩    STAND=1150  P 增=往前转,     P 减=往后转(平衡)
- *     id=2 FR 小腿  STAND=1500  P 增=往后转(升), P 减=往前转(降)
- *     id=3 FR 肩    STAND=1200  P 增=往前转,     P 减=往后转(平衡)
- *     id=4 FL 肩    STAND=1820  P 增=往后转(平衡), P 减=往前转
- *     id=5 FL 小腿  STAND=1500  P 增=往前转(降), P 减=往后转(升)
- *     id=6 BL 肩    STAND=1850  P 增=往后转(平衡), P 减=往前转
- *     id=7 BL 小腿  STAND=1400  P 增=往前转(降), P 减=往后转(升)
+ *     id=1 BR 肩    STAND=1100  P 增=往前转,     P 减=往后转(平衡)
+ *     id=2 FR 小腿  STAND=1600  P 增=往后转(升), P 减=往前转(降)
+ *     id=3 FR 肩    STAND=1100  P 增=往前转,     P 减=往后转(平衡)
+ *     id=4 FL 肩    STAND=2000(+100 偏置)  P 增=往后转(平衡), P 减=往前转
+ *     id=5 FL 小腿  STAND=1400  P 增=往前转(降), P 减=往后转(升)
+ *     id=6 BL 肩    STAND=1900  P 增=往后转(平衡), P 减=往前转
+ *     id=7 BL 小腿  STAND=1580(+80 偏置)   P 增=往前转(降), P 减=往后转(升)
  *
- * 安全活动范围(2026-09-12 用户拍板):
- *   - 4 小腿统一 (1400, 1600)
- *   - 4 肩统一 (1000, 2000)
+ * 安全活动范围(2026-09-14 stepping.c 里 SERVO_STEP):
+ *   - 4 小腿:宽度都 = 700
+ *     BR(900-1600),FR(900-1600),FL(1400-2100),BL(1430-1730)
+ *   - 4 肩:宽度都 = 1600
+ *     BR(700-2300),FR(700-2300),FL(800-2400),BL(700-2300)
+ *   范围根据 STAND ±X 自动生成,详细见 stepping.c 的 SERVO_STEP 表
  * ==================================================================== */
 
 /* --- 前左腿 FL --- */
-#define SERVO_SHOULDER_FL_STAND   1820  /* 左前肩:PA6/TIM3_CH1/servo4  ↑身体高 / ↓身体低 */
-#define SERVO_SHIN_FL_STAND       1500  /* 左前小腿:PA7/TIM17_CH1/servo5 ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_FL_STAND   2000  /* 左前肩:PA6/TIM3_CH1/servo4  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_FL_STAND       1400  /* 左前小腿:PA7/TIM17_CH1/servo5 ↑身体高 / ↓身体低 */
 
 /* --- 前右腿 FR --- */
-#define SERVO_SHOULDER_FR_STAND   1200  /* 右前肩:PA5/TIM2_CH1/servo3  ↑身体高 / ↓身体低 */
-#define SERVO_SHIN_FR_STAND       1500  /* 右前小腿:PA4/TIM3_CH2/servo2 ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_FR_STAND   1100  /* 右前肩:PA5/TIM2_CH1/servo3  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_FR_STAND       1600  /* 右前小腿:PA4/TIM3_CH2/servo2 ↑身体高 / ↓身体低 */
 
 /* --- 后左腿 BL --- */
-#define SERVO_SHOULDER_BL_STAND   1850  /* 左后肩:PB0/TIM3_CH3/servo6  ↑身体高 / ↓身体低 */
-#define SERVO_SHIN_BL_STAND       1400  /* 左后小腿:PA8/TIM1_CH1/servo7 ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_BL_STAND   1900  /* 左后肩:PB0/TIM3_CH3/servo6  ↑身体高 / ↓身体低 */
+#define SERVO_SHIN_BL_STAND       1580  /* 左后小腿:PA8/TIM1_CH1/servo7 ↑身体高 / ↓身体低 */
+                                                          /* 2026-09-14:从 1480 改成 1580(+80 偏置) */
 
 /* --- 后右腿 BR --- */
-#define SERVO_SHOULDER_BR_STAND   1150  /* 右后肩:PA3/TIM2_CH4/servo1  ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_BR_STAND   1100  /* 右后肩:PA3/TIM2_CH4/servo1  ↑身体高 / ↓身体低 */
 #define SERVO_SHIN_BR_STAND       1600  /* 右后小腿:PA2/TIM2_CH3/servo0 ↑身体高 / ↓身体低 */
-
 /* === 标定基线(center 命令使用)== */
 #define SERVO_NEUTRAL_US   1500
 /* USER CODE END EC */

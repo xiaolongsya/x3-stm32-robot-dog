@@ -2,24 +2,29 @@
 /**
   ******************************************************************************
   * @file    stepping.c
-  * @brief   机器狗 v1 原地踏步(2026-09-12 重写,基于远场近似 + 收腿模型)
+  * @brief   机器狗 v1 原地踏步(2026-09-14 整理)
   *
-  * 设计:远场近似 1mm ≈ 4µs + 收腿模型(2026-09-12 用户拍板)
-  *   - 完全抛弃 PA-apple IK + py-apple swing 曲线
+  * 算法(2026-09-14 最新版):
+  *   对角 trot:phase < 0.5 一对 swing,phase >= 0.5 另一对 swing
+  *   swing 腿:shin + thigh 用同一个三角波同步动作
+  *     shin_offset  = triangle × STEP_TROT_OFFSET
+  *     thigh_offset = shin_offset × STEP_RATIO_SHIN_TO_THIGH_X10 / 10
+  *   support 腿:保持 TROT_STAND(中立位)
+  *
+  * 收腿模型(机械反装镜像):
   *   - 抬腿 = 收腿 = 右腿 PWM 减 + 左腿 PWM 增
-  *   - 抬腿曲线:sin²(π × phase/0.5),边界连续无跳变
-  *   - ISR 内不 printf(避免阻塞 UART)
-  *   - stepping_*() 也不 printf(2026-09-12 进一步修)
+  *   - 三角波 ramp(0→peak→0),峰值在 phase=0.5
+  *   - 第一帧(phase=0)全 STAND(无跳变)
   *
-  * 参数(2026-09-12 用户拍板):
-  *   - H_LIFT     = 5 mm   (保守起步)
-  *   - T          = 2.0 s  (100Hz × T_INC=0.005)
-  *   - PWM_PER_MM = 4      (远场近似实测 1mm ≈ 4µs)
+  * 参数(2026-09-14 用户拍板,可调):
+  *   STEP_TROT_OFFSET      单腿摆幅(PWM,默认 500)
+  *   STEP_TROT_PERIOD      1 个完整周期秒数(默认 0.25)
+  *   STEP_RATIO_SHIN_TO_THIGH_X10 shin:thigh 比例 /10(默认 3,即 0.3)
   *
-  * UART 命令(兼容旧接口,在 main.c parse_uart_command 注册):
+  * UART 命令(在 main.c parse_uart_command 注册):
   *   step trot    启动原地踏步(主循环,无 printf)
   *   step stop    停止踏步,回 STAND(主循环,无 printf)
-  *   step show    空函数(原 printf 调试已禁用,接口保留)
+  *   step show    调试输出(主循环,空实现)
   *
   * 腿编号约定(对角 trot):
   *   腿 1 = FR (小腿=id 2, 肩=id 3)
@@ -27,27 +32,17 @@
   *   腿 3 = BL (小腿=id 7, 肩=id 6)
   *   腿 4 = BR (小腿=id 0, 肩=id 1)
   *
-  *   phase ∈ [0, 0.5):腿 1+3 swing,腿 2+4 support
-  *   phase ∈ [0.5, 1.0):腿 2+4 swing,腿 1+3 support
+  *   phase < 0.5 :腿 1+3 swing,腿 2+4 support
+  *   phase >= 0.5:腿 2+4 swing,腿 1+3 support
   *
-  * 收腿定义(2026-09-12 用户拍板):
-  *   - 抬腿本质 = 收腿 = 身体降低方向
-  *   - 大腿后旋 + 小腿后旋(脚相对身体往上,身体不动或微沉)
-  *   - 右腿 PWM 减,左腿 PWM 增(左右舵机反向安装)
+  * STAND 含义:
+  *   - 1500 = 舵机中位 = 大腿垂直 + 小腿水平(几何最高)
+  *   - STAND = 4 脚贴地实测姿态(前倾,BR/BL 小腿到极限)
+  *   - 6 路标准 STAND 来自用户标定,2 路(FL 肩 +100 / BL 小腿 +80)含机械偏置
   *
   * 安全:
-  *   - 第一帧(phase=0)自动是 STAND(sin²(0)=0,ds_pwm=0)
-  *   - SERVO_LIMIT clamp 防止越界
-  *   - ISR 内不 printf,避免阻塞 UART
-  *   - stepping_*() 不 printf,防 printf 卡死 main loop 阻断 step stop
-  *     (即使 ISR 还在跑,用户无法发 stop,只能断电)
-  *
-  * 多 agent 审查(2026-09-12):
-  *   - 8 路 PWM 全程在 SERVO_LIMIT 内 ✓
-  *   - 启动无跳变(phase=0 → STAND)✓
-  *   - PWM 变化率峰值 62.8µs/秒(SG90 slew rate 跟得上)✓
-  *   - ISR 不 printf 修 MEDIUM 风险 ✓
-  *   - stepping_*() 不 printf 修 printf 卡死 main loop 风险 ✓
+  *   - SERVO_LIMIT clamp(见 SERVO_STEP 表,8 路按 ±350/±800 分配)
+  *   - ISR 内不 printf,防 printf 卡死 main loop
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -59,28 +54,59 @@
 /* htim6 在 tim.c 定义,stepping.c 引用(TIM6 100Hz 步态中断) */
 extern TIM_HandleTypeDef htim6;
 
-/* === 参数(2026-09-12 用户拍板)====================================*/
-#define STEP_H_LIFT_MM    10.0f   /* 抬腿高度 (mm), 2026-09-12 ×2 调试(原 5mm 微弱) */
-#define STEP_PWM_PER_MM   4.0f    /* 远场近似 1mm ≈ 4µs PWM 调整 */
-#define STEP_T_INC        0.005f  /* 每 tick 相位增量,周期 2.0s @ 100Hz */
-#define STEP_TF           0.5f    /* 半周期 (对角 trot) */
+/* === 参数(2026-09-14 用户拍板 v8:8 路线性收腿调试版)===
+ *
+ * 【STEP_TROT_OFFSET】8 路同时线性 ramp 偏移幅度(PWM)
+ *   右腿(STAND - offset):小腿/大腿 P 减 = 收腿
+ *   左腿(STAND + offset):小腿/大腿 P 增 = 收腿
+ *   phase=0/1:全 STAND(0 偏移),phase=0.5:全 ±offset(最大偏移)
+ *   改这个值试不同收腿幅度
+ */
+#define STEP_TROT_OFFSET  500
+
+/* 【STEP_TROT_PERIOD】1 个完整 ramp 周期(秒),设 0.6 = 0.6 秒
+ *   ISR 频率 100Hz,所以 phase 每 tick 增加 1/(PERIOD*100)
+ *   设 0.6 → 每 tick +0.0167 → 60 ticks 一周期 → 0.6s
+ *   设 1.0 → 每 tick +0.01  → 100 ticks 一周期 → 1.0s
+ *   设 0.4 → 每 tick +0.025  → 40 ticks 一周期 → 0.4s
+ */
+#define STEP_TROT_PERIOD  0.25f
+
+/* 【STEP_RATIO_SHIN_TO_THIGH_X10】小腿 : 大腿 = ratio : 10
+ *   默认 10 = 1:1(小腿大腿同样摆幅,目前调试用)
+ *   改小 → 小腿动得比大腿多
+ *   改大 → 大腿动得比小腿多
+ *   实际 shin's offset = STEP_TROT_OFFSET
+ *       thigh's offset = STEP_TROT_OFFSET × ratio / 10
+ *
+ * 【0.6s 周期原则】shin 和 thigh 用同一个三角波同时完成动作
+ *   不需要任何 phase delay,在 0.6s 内它们各自走完自己的轨迹
+ *   delay 参数已删,如果想调整,改这个 ratio 即可
+ */
+#define STEP_RATIO_SHIN_TO_THIGH_X10  3
+
+/* === 内部计算:phase 每 tick 增量 === */
+#define STEP_T_INC  (1.0f / (STEP_TROT_PERIOD * 100.0f))  /* 自动算:0.6s → 0.0167 */
 
 /* === 8 路舵机收腿参数表 ==========================================
  *
  * 收腿方向:右腿 PWM 减,左腿 PWM 增(基于"抬腿 = 收腿 = 身体降低")
  *
- *   id  名称      STAND   is_right  SERVO_LIMIT(min,max)
- *   0   BR 小腿   1600    right     (1400, 1600)  ⚠ STAND=MAX
- *   1   BR 肩     1150    right     (1000, 2000)
- *   2   FR 小腿   1500    right     (1400, 1600)
- *   3   FR 肩     1200    right     (1000, 2000)
- *   4   FL 肩     1820    left      (1000, 2000)
- *   5   FL 小腿   1500    left      (1400, 1600)
- *   6   BL 肩     1850    left      (1000, 2000)
- *   7   BL 小腿   1400    left      (1400, 1600)  ⚠ STAND=MIN
+ * STAND 值全部从 main.h 的 SERVO_*_STAND 引用(单一真相源)
+ * SERVO_LIMIT 根据 2026-09-14 用户拍板统一规则:
+ *   - 4 小腿宽度都 = 700
+ *   - 4 肩宽度都 = 1600
+ * FL 肩 / BL 小腿 因为 +100 / +80 机械偏置,需要更宽限位
  *
- * ⚠ BR/BL 小腿 STAND 抵 SERVO_LIMIT 边界,但收腿方向都还有 180µs 余量
- *   (装配公差导致,不动硬约束)
+ *   id  名称      STAND   is_right  SERVO_LIMIT(min,max)
+ *   0   BR 小腿   SERVO_SHIN_BR_STAND     right     (900, 1600)
+ *   1   BR 肩     SERVO_SHOULDER_BR_STAND right     (700, 2300)
+ *   2   FR 小腿   SERVO_SHIN_FR_STAND     right     (900, 1600)
+ *   3   FR 肩     SERVO_SHOULDER_FR_STAND right     (700, 2300)
+ *   4   FL 肩     SERVO_SHOULDER_FL_STAND left      (800, 2400)
+ *   5   FL 小腿   SERVO_SHIN_FL_STAND     left      (1400, 2100)
+ *   6   BL 肩     SERVO_SHOULDER_BL_STAND left      (700, 2300)
+ *   7   BL 小腿   SERVO_SHIN_BL_STAND     left      (1430, 1730)
  */
 typedef struct {
   uint16_t stand;      /* STAND PWM (从 SERVO_*_STAND 常量) */
@@ -90,14 +116,14 @@ typedef struct {
 } ServoStep;
 
 static const ServoStep SERVO_STEP[8] = {
-  /*0  BR 小腿 */ {SERVO_SHIN_BR_STAND,      1, 1400, 1600},
-  /*1  BR 肩   */ {SERVO_SHOULDER_BR_STAND,  1, 1000, 2000},
-  /*2  FR 小腿 */ {SERVO_SHIN_FR_STAND,      1, 1400, 1600},
-  /*3  FR 肩   */ {SERVO_SHOULDER_FR_STAND,  1, 1000, 2000},
-  /*4  FL 肩   */ {SERVO_SHOULDER_FL_STAND,  0, 1000, 2000},
-  /*5  FL 小腿 */ {SERVO_SHIN_FL_STAND,      0, 1400, 1600},
-  /*6  BL 肩   */ {SERVO_SHOULDER_BL_STAND,  0, 1000, 2000},
-  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,      0, 1400, 1600},
+  /*0  BR 小腿 */ {SERVO_SHIN_BR_STAND,      1, 900,  1600},
+  /*1  BR 肩   */ {SERVO_SHOULDER_BR_STAND,  1, 700,  2300},
+  /*2  FR 小腿 */ {SERVO_SHIN_FR_STAND,      1, 900,  1600},
+  /*3  FR 肩   */ {SERVO_SHOULDER_FR_STAND,  1, 700,  2300},
+  /*4  FL 肩   */ {SERVO_SHOULDER_FL_STAND,  0, 800,  2400},
+  /*5  FL 小腿 */ {SERVO_SHIN_FL_STAND,      0, 1400, 2100},
+  /*6  BL 肩   */ {SERVO_SHOULDER_BL_STAND,  0, 700,  2300},
+  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,      0, 1430, 1730},
 };
 
 /* === 状态 =========================================================*/
@@ -125,56 +151,90 @@ static void stepping_apply_stand(void) {
   }
 }
 
+/* === 应用 TROT_STAND 到 8 路舵机(2026-09-13 用户拍板)===
+ *
+ * 与 SERVO_STEP[i].stand 的区别:
+ *   - STAND:用户标定的前倾站立(用于 sit/stand 循环,前倾 + BR/BL 小腿极限位)
+ *   - TROT_STAND:6 路用 STAND,后小腿改成中立(避免前倾水平分量干扰 trot)
+ *     - BR shin:1500(STAND 是 1600=MAX,改中立)
+ *     - BL shin:1460(STAND 是 1400=MIN,改中立 1500-40=1460 保持结构偏差)
+ *
+ * 用于 trot 起踏/停踏瞬间,身体不前倾,前后小腿中立
+ */
+static const uint16_t trot_stand_pwm[8] = {
+  1500,                          /* 0  BR 小腿(STAND=1600,改中立) */
+  SERVO_SHOULDER_BR_STAND,       /* 1  BR 肩(=STAND 1150) */
+  SERVO_SHIN_FR_STAND,           /* 2  FR 小腿(=STAND 1500) */
+  SERVO_SHOULDER_FR_STAND,       /* 3  FR 肩(=STAND 1200) */
+  SERVO_SHOULDER_FL_STAND,       /* 4  FL 肩(=STAND 1820,保留 +80 偏差) */
+  SERVO_SHIN_FL_STAND,           /* 5  FL 小腿(=STAND 1500) */
+  SERVO_SHOULDER_BL_STAND,       /* 6  BL 肩(=STAND 1850) */
+  1460,                          /* 7  BL 小腿(STAND=1400,改中立 1500-40) */
+};
+
+static void stepping_apply_trot_stand(void) {
+  for (uint8_t i = 0; i < 8; i++) {
+    set_servo_pulse(i, trot_stand_pwm[i]);
+  }
+}
+
 /* === 单步执行:推进相位 + 算 8 路 PWM ==============================
  *
  * ⚠️ TIM6 ISR 调用 — 不能 printf,只 set_servo_pulse + 写 dbg
  *
- * 算法:
- *   phase < 0.5:腿 1+3 swing (FR id 2,3 + BL id 6,7),腿 2+4 support
- *   phase ≥ 0.5:腿 2+4 swing (FL id 4,5 + BR id 0,1),腿 1+3 support
+ * 算法(2026-09-14 v10:对角 trot,正常踏步模式):
+ *   phase < 0.5 :腿 1+3 swing (FR id 2,3 + BL id 6,7)
+ *                腿 2+4 support (FL id 4,5 + BR id 0,1) — 保持 TROT_STAND
+ *   phase >= 0.5:腿 2+4 swing (FL id 4,5 + BR id 0,1)
+ *                腿 1+3 support (FR id 2,3 + BL id 6,7) — 保持 TROT_STAND
  *
- *   swing 腿:h = H_LIFT × sin²(π × phase_in_swing)
- *             ds_pwm = h × PWM_PER_MM  ∈ [0, 20] µs
- *             右腿: pwm = STAND - ds_pwm
- *             左腿: pwm = STAND + ds_pwm
- *   support 腿: pwm = STAND(不动)
+ *   swing 腿: shin + thigh 用同一个三角波同时动作
+ *     shin_offset  = triangle × STEP_TROT_OFFSET
+ *     thigh_offset = shin_offset × STEP_RATIO_SHIN_TO_THIGH_X10 / 10
  *
- *   第一帧(phase=0): sin²(0)=0 → ds_pwm=0 → 全 STAND(无跳变)
+ *   support 腿: 保持 TROT_STAND(中立位)
+ *
+ *   第一帧(phase=0): 全 0 → 全 TROT_STAND(无跳变)
+ *   peak (phase=0.5): swing 对角腿 ±offset,support 腿 STAND
  */
 static void stepping_trot_step(void) {
-  /* 当前摆动腿的 phase_in_swing (归一到 [0,1)) 和 id 位掩码 */
-  float phase_in_swing;
+  /* phase 0~1 完整 ramp 周期,0→0.5 收腿,0.5→1 伸腿 */
   uint8_t swing_mask;
+  float phase_in_swing;
 
-  if (step_t_phase < STEP_TF) {
-    /* 腿 1+3 swing: FR(2,3) + BL(6,7) */
+  if (step_t_phase < 0.5f) {
     phase_in_swing = step_t_phase * 2.0f;
     swing_mask = (1u << 2) | (1u << 3) | (1u << 6) | (1u << 7);
   } else {
-    /* 腿 2+4 swing: FL(4,5) + BR(0,1) */
-    phase_in_swing = (step_t_phase - STEP_TF) * 2.0f;
+    phase_in_swing = (step_t_phase - 0.5f) * 2.0f;
     swing_mask = (1u << 0) | (1u << 1) | (1u << 4) | (1u << 5);
   }
 
-  /* sin² 抬腿曲线:边界连续,峰值 1,首末导数为 0(无 jerk) */
-  float sin_val = sinf((float)M_PI * phase_in_swing);
-  float h_mm = STEP_H_LIFT_MM * sin_val * sin_val;
-  int16_t ds_pwm = (int16_t)(h_mm * STEP_PWM_PER_MM + 0.5f);  /* 四舍五入 → [0, 20] */
+  float triangle = 1.0f - 2.0f * fabsf(phase_in_swing - 0.5f);
 
-  /* 应用 8 路 PWM + 缓存 dbg */
   for (uint8_t id = 0; id < 8; id++) {
     int16_t pwm;
+    int16_t this_offset;
+
+    if (id == 1 || id == 3 || id == 4 || id == 6) {
+      /* 大腿:用 ratio 缩放后的偏移,跟小腿同三角波 */
+      this_offset = (int16_t)(triangle * (float)STEP_TROT_OFFSET
+                              * (float)STEP_RATIO_SHIN_TO_THIGH_X10 / 10.0f + 0.5f);
+    } else {
+      /* 小腿 */
+      this_offset = (int16_t)(triangle * (float)STEP_TROT_OFFSET + 0.5f);
+    }
 
     if (swing_mask & (1u << id)) {
-      /* 摆动腿:右减 / 左增(收腿) */
+      /* Swing 腿:右腿 P 减(收),左腿 P 增(收) */
       if (SERVO_STEP[id].is_right) {
-        pwm = (int16_t)SERVO_STEP[id].stand - ds_pwm;
+        pwm = (int16_t)SERVO_STEP[id].stand - this_offset;
       } else {
-        pwm = (int16_t)SERVO_STEP[id].stand + ds_pwm;
+        pwm = (int16_t)SERVO_STEP[id].stand + this_offset;
       }
     } else {
-      /* 支撑腿:不动 */
-      pwm = (int16_t)SERVO_STEP[id].stand;
+      /* Support 腿:保持 TROT_STAND(中立位) */
+      pwm = (int16_t)trot_stand_pwm[id];
     }
 
     uint16_t clamped = stepping_clamp_pwm(id, pwm);
@@ -183,7 +243,6 @@ static void stepping_trot_step(void) {
   }
 
   dbg_phase = step_t_phase;
-  dbg_h_mm  = h_mm;
 }
 
 /* === 接口实现 =====================================================*/
@@ -197,7 +256,8 @@ void stepping_init(void) {
 
 void stepping_start_trot(void) {
   /* 主循环调用 — 不 printf (2026-09-12 防 printf 阻塞 UART 卡死 main loop) */
-  stepping_apply_stand();
+  /* 2026-09-13:用 TROT_STAND(中立位)替代前倾 STAND,起踏更稳 */
+  stepping_apply_trot_stand();
   step_state = STEPPING_TROT;
   step_t_phase = 0.0f;
 

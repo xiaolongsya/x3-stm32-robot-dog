@@ -2,21 +2,21 @@
 /**
   ******************************************************************************
   * @file    motions.h
-  * @brief   机器狗 v1 动作模块(2026-09-13 新建)
+  * @brief   机器狗 v1 动作模块(2026-09-14 整理)
   *
   * 设计动机:
-  *   - 不同动作(站立 / 踏步 / 走路 / 以后扩展)的代码全部放在 motions.c/h 里
+  *   - 不同动作(站立 / 踏步 / 蹲起循环 / 小腿测试)的代码全部放 motions.c/h 里
   *   - main.c 只负责:初始化 → 注册动作 → 选一个 → 主循环轮询
-  *   - 加新动作:在 MotionTable 末尾加一行 + 写一个 motion_xxx() 函数,不动 main.c
+  *   - 加新动作:在 MotionTable 末尾加一行 + 写 motion_xxx() 函数,不动 main.c
   *
   * 工作模式:
   *   - 编译时通过 MOTION_ID 宏选择要跑的动作(无通信期间用这个)
   *   - 运行时未来可扩展为 UART 命令切动作(暂不实现)
   *
   * 调度:
-  *   - 每个动作有自己的 entry 函数和可选的 tick 回调(供 TIM6 ISR 调)
+  *   - 每个动作有自己的 setup() 和可选的 tick() 回调(供 TIM6 ISR 调)
   *   - 动作的 setup() 在上电时跑一次,可选 delay_s(秒)后开始
-  *   - 动作跑完后保持状态(不回 STAND);setup() 完成后舵机 = STAND
+  *   - 动作跑完后保持状态(不回 STAND)
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -31,19 +31,35 @@ extern "C" {
 #include "main.h"
 #include <stdint.h>
 
-/* === 选择要跑的动作(无通信模式默认,改这里切换不同动作测试)=== */
-/* 选项:
- *   MOTION_STAND  - 上电站立,什么也不做(标定/观察用)
- *   MOTION_TROT   - 上电默认站立,5s 后开始原地踏步 N 秒(无限)再回 STAND
- *   MOTION_WALK   - 上电默认站立,5s 后开始前进走 N 秒(暂未实现,预留给下一步)
+/* === 选择要跑的动作(无通信模式默认,改这里切换)=== */
+/* 4 个动作(2026-09-14 整理):
+ *   MOTION_STAND  - 上电跳 STAND 然后保持(标定/观察用)
+ *   MOTION_TROT   - 上电跳 TROT_STAND → start_delay_s 后启动踏步
+ *   MOTION_BOB    - 上电跳 STAND → hold 5s → 蹲下 → hold 5s → 循环
+ *   MOTION_SHIN_TEST - 8 路同步线性 ramp 测小腿范围(找最大值)
+ *
+ * 默认 MOTION_TROT;改这里切其他动作:
+ *   #define MOTION_ID  MOTION_STAND   // 只站立
+ *   #define MOTION_ID  MOTION_BOB     // 蹲起循环
+ *   #define MOTION_ID  MOTION_SHIN_TEST // 小腿测试
  */
 #ifndef MOTION_ID
-#define MOTION_ID  MOTION_STAND
+#define MOTION_ID  MOTION_TROT
 #endif
 
-#define MOTION_STAND  1
-#define MOTION_TROT   2
-#define MOTION_WALK   3  /* TODO 预留给下一步 */
+#define MOTION_STAND     1
+#define MOTION_TROT      2
+#define MOTION_BOB       3  /* 站立↔蹲下 循环 */
+#define MOTION_SHIN_TEST 4  /* 小腿范围测试 */
+
+/* === 小腿范围测试参数(2026-09-13 临时)===========================
+ * 改这个值烧录 → 4 条小腿同时偏移 → 看哪个先堵转 → 找极限
+ * 正值 = 小腿向"收"方向;负值 = 向"伸"方向
+ * 右小腿(BR id 0, FR id 2):1500 - offset(P 减 = 收)
+ * 左小腿(FL id 5, BL id 7):1500 + offset(P 增 = 收,镜像)
+ * BL 小腿含结构偏差:-40 基线,1500-40=1460 + offset
+ */
+#define TEST_SHIN_OFFSET  600
 
 typedef enum {
   MOTION_PHASE_INIT = 0,   /* 还未到 start_delay */
@@ -54,7 +70,7 @@ typedef enum {
 /* === 动作函数原型 ===
  *
  * setup():主循环 main() 初始化阶段调一次
- *   - 设舵机到 STAND(基线姿态)
+ *   - 设舵机到 STAND/TROT_STAND 等基线姿态
  *   - 准备定时器 / 状态变量
  *   - 允许有 start_delay 秒的"先站立再动"逻辑
  *
@@ -74,6 +90,22 @@ typedef struct {
 
 MotionPhase motion_get_phase(void);
 const char *motion_get_name(void);
+
+/* === 调度接口(主循环) ===
+ *
+ * motion_init():
+ *   - 在 HAL_TIM_PWM_Start 之后调一次
+ *   - 写 8 路到 SERVO_NEUTRAL_US(1500) 作为安全起点
+ *   - 装载 MOTION_ID 选中的动作,调其 setup() 启动
+ *
+ * motion_poll():
+ *   - main while(1) 开头调一次
+ *   - 内部顺序:ramp_tick() → current->tick()(如果当前有 ramp)
+ *   - ramp_tick 推进当前活跃的 RAMP,完成后切 RAMP_DONE
+ *   - current->tick 推进各动作的状态机(BOB / TROT)
+ */
+void motion_init(void);
+void motion_poll(void);
 
 /* 注册表入口(C 数组末尾哨兵,以后加动作在 motions.c 里 append) */
 extern const Motion MOTION_TABLE[];
