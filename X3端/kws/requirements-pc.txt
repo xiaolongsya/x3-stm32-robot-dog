@@ -1,0 +1,9 @@
+# PC 端训练环境依赖
+# Windows 10/11, Python 3.10+
+
+torch>=2.0
+soundfile>=0.12
+scipy>=1.10
+numpy>=1.24
+openwakeword>=0.6.0
+onnxruntime>=1.15
