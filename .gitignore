@@ -48,6 +48,14 @@ Thumbs.db
 .idea/
 
 # ====================
+# Eclipse 工程元数据 + AI 工作流(2026-09-15 加)
+# 跟 STM32CubeIDE 那个 .project / .mxproject 不冲突(那个在子目录里,已被跟踪)
+# 这里只 ignore 根目录的 AI/工作流文件
+# ====================
+/.project
+.workflow/
+
+# ====================
 # AI 协作文档(2026-09-02 加,KICKOFF_PROMPT 已删 2026-09-12)
 # 这些不是项目产物,只本地用
 # ====================
@@ -73,6 +81,17 @@ voice_data/
 # docs/legacy/xiaolong.onnx
 # ====================
 docs/legacy/xiaolong.onnx
+
+# ====================
+# X3 端 KWS 训练产物(2026-09-15 加)
+# voice_data/ 已在顶部 voice_data/ 规则匹配,这里只管 kws/ 目录
+# - .venv/        : Python venv(几百 MB,本地复现用,不入库)
+# - model_xiaolong/: 训练中间产物(.npy / *_train / *_test 切分 / .pt / .onnx)
+# - __pycache__/  : 重复声明保险(已有 __pycache__/ 通配)
+# ====================
+X3端/kws/.venv/
+X3端/kws/model_xiaolong/
+X3端/kws/__pycache__/
 
 # 审查临时目录(2026-09-02 加)
 _review_tmp/
