@@ -11,8 +11,8 @@
   *     thigh_offset = shin_offset × STEP_RATIO_SHIN_TO_THIGH_X10 / 10
   *   support 腿:保持 TROT_STAND(中立位)
   *
-  * 收腿模型(机械反装镜像):
-  *   - 抬腿 = 收腿 = 右腿 PWM 减 + 左腿 PWM 增
+  * 抬腿模型(机械反装镜像):
+  *   - 抬腿 = 小腿向狗头方向倾斜 = 右腿 PWM 减 + 左腿 PWM 增
   *   - 三角波 ramp(0→peak→0),峰值在 phase=0.5
   *   - 第一帧(phase=0)全 STAND(无跳变)
   *
@@ -55,13 +55,13 @@
 /* htim6 在 tim.c 定义,stepping.c 引用(TIM6 100Hz 步态中断) */
 extern TIM_HandleTypeDef htim6;
 
-/* === 参数(2026-09-14 用户拍板 v8:8 路线性收腿调试版)===
+/* === 参数(2026-09-14 用户拍板 v8:8 路线性抬腿调试版)===
  *
  * 【STEP_TROT_OFFSET】8 路同时线性 ramp 偏移幅度(PWM)
- *   右腿(STAND - offset):小腿/大腿 P 减 = 收腿
- *   左腿(STAND + offset):小腿/大腿 P 增 = 收腿
+ *   右腿(STAND - offset):小腿/大腿 P 减 = 向狗头方向倾斜
+ *   左腿(STAND + offset):小腿/大腿 P 增 = 向狗头方向倾斜
  *   phase=0/1:全 STAND(0 偏移),phase=0.5:全 ±offset(最大偏移)
- *   改这个值试不同收腿幅度
+ *   改这个值试不同抬腿幅度
  */
 #define STEP_TROT_OFFSET  500
 
@@ -89,9 +89,9 @@ extern TIM_HandleTypeDef htim6;
 /* === 内部计算:phase 每 tick 增量 === */
 #define STEP_T_INC  (1.0f / (STEP_TROT_PERIOD * 100.0f))  /* 自动算:0.6s → 0.0167 */
 
-/* === 8 路舵机收腿参数表 ==========================================
+/* === 8 路舵机抬腿参数表 ==========================================
  *
- * 收腿方向:右腿 PWM 减,左腿 PWM 增(基于"抬腿 = 收腿 = 身体降低")
+ * 抬腿方向:右腿 PWM 减,左腿 PWM 增(抬腿 = 小腿向狗头方向倾斜)
  *
  * STAND 值全部从 main.h 的 SERVO_*_STAND 引用(单一真相源)
  * SERVO_LIMIT 根据 2026-09-14 用户拍板统一规则:
@@ -195,7 +195,7 @@ static void stepping_apply_trot_stand(void) {
  *   peak (phase=0.5): swing 对角腿 ±offset,support 腿 STAND
  */
 static void stepping_trot_step(void) {
-  /* phase 0~1 完整 ramp 周期,0→0.5 收腿,0.5→1 伸腿 */
+  /* phase 0~1 完整 ramp 周期,0→0.5 抬腿,0.5→1 落腿 */
   uint8_t swing_mask;
   float phase_in_swing;
 
