@@ -157,7 +157,8 @@ int main(void)
    * X3 端跑 listen_booted.py 监听 ttyS3,收到 BOOT 说明:
    *   - STM32 跑到了 main()
    *   - USART1 TX 通路正常(PA9 输出)
-   * 8 路被强制设 1500(蹲下 / 腿伸直) = 证明 PWM 输出也正常
+   * 8 路被强制设"标准值"(跪下姿态,含 FL 肩 +100 / BL 小腿 +80 物理偏移)
+   *   = 证明 PWM 输出也正常
    * (2026-09-16:删掉'蜂鸣器响 = 跑到这里'那行,蜂鸣器链路作废)
    */
   /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit -> 必须手动启动 HAL_TIM_PWM_Start
@@ -174,13 +175,12 @@ int main(void)
   /* === 上电默认姿态(2026-09-14 整理)===
    * 1) stepping_init() 初始化步态状态机(暂不启 TIM6,等 motion 触发)
    * 2) motion_init() 装载 MOTION_ID + 启动对应动作:
-   *    - 先写 8 路 = SERVO_NEUTRAL_US(1500) 作为安全起点
+   *    - 先写 8 路 = 标准值/跪下(motion_apply_neutral,含物理偏移)作为安全起点
    *    - 调 current->setup() 跳到对应姿态(STAND / TROT_STAND / SIT)
    *
-   * 默认动作(MOTION_ID = MOTION_TROT,踏步测试):
-   *    - 上电:8 路跳 TROT_STAND(中立位,无前倾)
-   *    - 5s 后启动 stepping 对角 trot
-   *    - 30s 后踏步结束,8 路回 STAND
+   * 默认动作(motions.h 的 MOTION_ID = MOTION_STAND):
+   *    - 上电跳 STAND 后保持不动,等 X3 命令
+   *    - 改 MOTION_ID = MOTION_TROT 才会自动踏步(5s 后启动,30s 结束)
    *
    * 切换其他模式:改 motions.h 的 MOTION_ID
    *    MOTION_STAND    :上电跳 STAND 后保持

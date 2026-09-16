@@ -7,7 +7,7 @@
   * 当前 4 个动作(2026-09-14 整理后):
   *   - STAND:写 8 路到 SERVO_*_STAND 然后保持(标定/观察)
   *   - TROT:写 8 路到 TROT_STAND,start_delay_s 后启动 stepping,保持到 stop
-  *   - BOB:写 8 路到 STAND → hold 5s → 写 8 路到 SIT(1500)→ hold 5s → 循环
+  *   - BOB:写 8 路到 STAND → hold 5s → 写 8 路到"标准值/跪下"→ hold 5s → 循环
   *   - SHIN_TEST:8 路同步线性 ramp 测小腿范围(找最大值)
   *
   * STAND 值来源:全部从 main.h 的 SERVO_*_STAND 读取(单一真相源)
@@ -37,15 +37,38 @@ static void apply_stand(void) {
   }
 }
 
-/* === 应用 SIT 到 8 路舵机(蹲下 = 全 1500 中位)=====================*/
-static void apply_sit_neutral(void) {
+/* === 8 路"标准值"表(= 跪下姿态,2026-09-17 加)===
+ * 6 路 = SERVO_NEUTRAL_US(1500);2 个**物理偏移全局存在**,必须带:
+ *   id=4 FL 肩  = 1500 + 100 = 1600
+ *   id=7 BL 小腿 = 1500 +  80 = 1580
+ * 用于:上电安全起点 / motion_play_by_id 切动作过渡 / BOB 蹲姿
+ */
+static const uint16_t neutral_pwm[8] = {
+  SERVO_NEUTRAL_US,           /* 0  BR 小腿 */
+  SERVO_NEUTRAL_US,           /* 1  BR 肩 */
+  SERVO_NEUTRAL_US,           /* 2  FR 小腿 */
+  SERVO_NEUTRAL_US,           /* 3  FR 肩 */
+  SERVO_NEUTRAL_FL_SHOULDER,  /* 4  FL 肩  :1500 + 100 物理偏移 = 1600 */
+  SERVO_NEUTRAL_US,           /* 5  FL 小腿 */
+  SERVO_NEUTRAL_US,           /* 6  BL 肩 */
+  SERVO_NEUTRAL_BL_SHIN,      /* 7  BL 小腿:1500 +  80 物理偏移 = 1580 */
+};
+
+/* === 应用"标准值/跪下"到 8 路舵机(对外可见)=====================
+ * 2026-09-17 修:此前是"8 路全 1500",漏掉了 FL 肩 +100 / BL 小腿 +80
+ * 两个物理偏移 —— 它们在**任何姿态**下都存在,不只 STAND
+ *
+ * 调用方:motions.c 内部(上电安全起点 / 切动作过渡 / BOB 蹲姿)
+ *        + commands.c 的 center / sit 文本命令
+ */
+void motion_apply_neutral(void) {
   for (uint8_t i = 0; i < 8; i++) {
-    set_servo_pulse(i, SERVO_NEUTRAL_US);
+    set_servo_pulse(i, neutral_pwm[i]);
   }
 }
 
 /* === SIT 真实下蹲姿态(2026-09-16 重整)==                          =======================
- * 2026-09-16 重大修正:取消 BL shin +80 偏置 (STAND 1580→1480)
+ * 2026-09-16 重大修正:BL 小腿 STAND 1580→1480(实测值重校,不是"取消偏置")
  *   - 旧代码 SIT_REAL_PWM[7]=1980 但 SERVO_LIMIT[7]=[1430,1730] 宽度只有 300
  *     → 1980 被 clamp 到 1730, BL 只走 150/500 (30%) 所以蹲下"瞬间到位"
  *   - 新 STAND=1480, SERVO_LIMIT=[1480,2180], target=1980 → +500 与其他小腿一致
@@ -72,10 +95,12 @@ static const uint16_t SIT_REAL_PWM[8] = {
 
 
 /* === 应用 TROT_STAND 到 8 路舵机(中立,无前倾)======================
- * 2026-09-16 重整:取消 BL shin +80 偏置,BL 也用纯中立 1500
+ * 2026-09-17 重整:BL 小腿中立位补上 +80 物理偏移(1500 → 1580)
+ *   此前写 1500 是漏了偏移 —— BL 的"中立"要与其他小腿的 1500 **物理等价**,
+ *   BL 有 +80 物理偏移,所以实际 PWM = 1580
  * 6 路用 STAND,BR shin 改中立(STAND=1600=MAX 是前倾,改 1500 中立避免水平分量干扰 trot)
  *   - BR shin:1500(中立)
- *   - BL shin:1500(中立,2026-09-16 从 1460 改 1500)
+ *   - BL shin:1580(中立 = 1500 + 80 物理偏移)
  * 用于 trot 起踏/停踏瞬间,身体不前倾
  */
 static const uint16_t trot_stand_pwm[8] = {
@@ -86,7 +111,7 @@ static const uint16_t trot_stand_pwm[8] = {
   SERVO_SHOULDER_FL_STAND,       /* 4  FL 肩:STAND 2000(+100 偏置) */
   SERVO_SHIN_FL_STAND,           /* 5  FL 小腿:STAND 1400 */
   SERVO_SHOULDER_BL_STAND,       /* 6  BL 肩:STAND 1900 */
-  1500,                          /* 7  BL 小腿:1500(中立,2026-09-16 改) */
+  SERVO_NEUTRAL_BL_SHIN,         /* 7  BL 小腿:1580(中立 = 1500+80 偏移,2026-09-17 改) */
 };
 
 static void apply_trot_stand(void) {
@@ -144,7 +169,7 @@ static void motion_trot_setup(void) {
   apply_trot_stand();
 }
 
-/* BOB:跳 STAND → hold 5s → 跳 SIT(1500)→ hold 5s → 循环 */
+/* BOB:跳 STAND → hold 5s → 跳"标准值/跪下"→ hold 5s → 循环 */
 static void motion_bob_setup(void) {
   apply_stand();
   /* 进入 STANDING 状态,5s 后切到 SIT */
@@ -156,7 +181,7 @@ static void motion_shin_test_setup(void) { }
 /* === BOB 状态机 ===================================================*/
 typedef enum {
   BOB_STANDING = 0,    /* HOLD STAND 5s */
-  BOB_TO_SIT,          /* 跳 SIT(1500) */
+  BOB_TO_SIT,          /* 跳标准值/跪下 */
   BOB_SITTING,         /* HOLD SIT 5s */
   BOB_TO_STAND         /* 跳 STAND */
 } BobPhase;
@@ -206,7 +231,7 @@ static void motion_bob_tick(void) {
   switch (bob_phase) {
     case BOB_STANDING:
       if (elapsed >= BOB_HOLD_MS) {
-        apply_sit_neutral();
+        motion_apply_neutral();
         bob_phase = BOB_SITTING;
         bob_phase_start_ms = now;
       }
@@ -311,7 +336,7 @@ void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
   phase = MOTION_PHASE_RUN;
 
   /* 应用初始姿态(setup) */
-  apply_sit_neutral();   /* 安全起点 */
+  motion_apply_neutral();   /* 安全起点 */
   if (current->setup) current->setup();
 }
 
@@ -332,8 +357,8 @@ void motion_init(void) {
     current = &MOTION_TABLE[0];
   }
 
-  /* 安全起点:8 路全 1500(腿完全伸直/居中) */
-  apply_sit_neutral();
+  /* 安全起点:8 路"标准值/跪下"(含 FL 肩 +100 / BL 小腿 +80 物理偏移) */
+  motion_apply_neutral();
 
   if (current->setup) current->setup();
   phase = MOTION_PHASE_RUN;

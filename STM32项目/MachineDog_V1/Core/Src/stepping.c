@@ -147,16 +147,19 @@ static void stepping_apply_stand(void) {
   }
 }
 
-/* === 应用 TROT_STAND 到 8 路舵机(2026-09-16 重整)===
+/* === 应用 TROT_STAND 到 8 路舵机(2026-09-17 重整)===
  *
  * 与 SERVO_STEP[i].stand 的区别:
- *   - STAND:正站立 2026-09-16 取消 BL shin +80 偏置 (STAND 1580→1480)
+ *   - STAND:正站立(BL 小腿 2026-09-16 实测 1580→1480)
  *   - TROT_STAND:BR shin 改中立(STAND=1600=MAX 是前倾,改 1500 中立避免水平分量干扰 trot)
  *     - BR shin:1500(中立)
- *     - BL shin:1500(中立,2026-09-16 从 1460 改 1500)
+ *     - BL shin:1580(中立 = 1500 + 80 **物理偏移**,2026-09-17 改)
+ *       此前写 1500 是漏了偏移;BL 的"中立"要与其他小腿的 1500 物理等价
  * 其他 6 路用 STAND 不动
  *
  * 用于 trot 起踏/停踏瞬间,身体不前倾
+ *
+ * ⚠️ 本表与 motions.c 的同名表是**两份拷贝**,改一处必须同步另一处
  */
 static const uint16_t trot_stand_pwm[8] = {
   1500,                          /* 0  BR 小腿(STAND=1600=MAX,改中立) */
@@ -166,7 +169,7 @@ static const uint16_t trot_stand_pwm[8] = {
   SERVO_SHOULDER_FL_STAND,       /* 4  FL 肩(=STAND 2000) */
   SERVO_SHIN_FL_STAND,           /* 5  FL 小腿(=STAND 1400) */
   SERVO_SHOULDER_BL_STAND,       /* 6  BL 肩(=STAND 1900) */
-  1500,                          /* 7  BL 小腿(STAND=1480,改中立 1500,2026-09-16) */
+  SERVO_NEUTRAL_BL_SHIN,         /* 7  BL 小腿(1580 = 1500+80 偏移,2026-09-17 改) */
 };
 
 static void stepping_apply_trot_stand(void) {

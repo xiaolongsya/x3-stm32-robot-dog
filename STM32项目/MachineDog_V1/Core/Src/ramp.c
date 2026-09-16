@@ -13,12 +13,18 @@
 
 /* === 跟踪 8 路 PWM(供 ramp 起点采样)=============================
  * 写策略:任何经 motions.c 的 PWM 写入都同步更新这个数组
- *   - apply_stand / apply_sit_real / apply_neutral_center / ramp_tick
+ *   - apply_stand / motion_apply_neutral / ramp_tick
  *   - set_pwm() 内统一入口
+ *
+ * 初值 = 8 路"标准值"(含 FL 肩 +100 / BL 小腿 +80 物理偏移)。
+ * 实际上上电时 motion_init() 会立刻调 motion_apply_neutral() 同步一遍,
+ * 这里只是 ramp 在任何写入之前就被启动时的兜底。
  */
 static uint16_t g_pwm[8] = {
-  SERVO_NEUTRAL_US, SERVO_NEUTRAL_US, SERVO_NEUTRAL_US, SERVO_NEUTRAL_US,
-  SERVO_NEUTRAL_US, SERVO_NEUTRAL_US, SERVO_NEUTRAL_US, SERVO_NEUTRAL_US,
+  SERVO_NEUTRAL_US,          SERVO_NEUTRAL_US,          /* 0 BR 小腿  / 1 BR 肩    */
+  SERVO_NEUTRAL_US,          SERVO_NEUTRAL_US,          /* 2 FR 小腿  / 3 FR 肩    */
+  SERVO_NEUTRAL_FL_SHOULDER, SERVO_NEUTRAL_US,          /* 4 FL 肩(+100) / 5 FL 小腿 */
+  SERVO_NEUTRAL_US,          SERVO_NEUTRAL_BL_SHIN,     /* 6 BL 肩    / 7 BL 小腿(+80) */
 };
 
 /* 暴露给 main.c:set_servo_pulse 内调 motions_track_pwm */

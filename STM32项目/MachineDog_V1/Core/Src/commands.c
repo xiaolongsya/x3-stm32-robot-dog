@@ -66,7 +66,9 @@ static void parse_text_command(const char *cmd) {
   } else if (strcmp(cmd, "step show") == 0) {
     stepping_show();
   } else if (strcmp(cmd, "center") == 0) {
-    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
+    /* 2026-09-17:改用 8 路"标准值"(含 FL 肩 +100 / BL 小腿 +80 物理偏移),
+     * 不再统一写 1500 —— 偏移在任何姿态下都存在 */
+    motion_apply_neutral();
     commands_send_text("OK center\n");
   } else if (strcmp(cmd, "stand") == 0) {
     set_servo_pulse(0, SERVO_SHIN_BR_STAND);
@@ -79,7 +81,8 @@ static void parse_text_command(const char *cmd) {
     set_servo_pulse(7, SERVO_SHIN_BL_STAND);
     commands_send_text("OK stand\n");
   } else if (strcmp(cmd, "sit") == 0) {
-    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
+    /* 2026-09-17:同 center,用 8 路标准值(含物理偏移) */
+    motion_apply_neutral();
     commands_send_text("OK sit\n");
   } else if (strcmp(cmd, "mode text") == 0) {
     g_mode = MODE_TEXT;

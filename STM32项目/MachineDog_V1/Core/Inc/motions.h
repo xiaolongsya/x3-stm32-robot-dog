@@ -104,6 +104,15 @@ const char *motion_get_name(void);
  */
 void motion_play_by_id(uint8_t id, uint32_t duration_ms);
 
+/* === 应用 8 路"标准值" = 跪下姿态(2026-09-17 加)===
+ * 含 2 个**物理偏移**(任何姿态下都存在,不只 STAND):
+ *   id=4 FL 肩  = 1500 + 100 = 1600
+ *   id=7 BL 小腿 = 1500 +  80 = 1580
+ * 内部用于:上电安全起点 / 切动作过渡 / BOB 蹲姿
+ * 外部用于:commands.c 的 center / sit 文本命令
+ */
+void motion_apply_neutral(void);
+
 /* === ACTION_PLAY 入口 (2026-09-16 加 / 2026-09-17 加 hold)===
  * id 1..4: 走 motion_play_by_id()(既有动作),hold_ms 当动作时长传下去
  * id 5..8: ramp 动作(本函数处理)
