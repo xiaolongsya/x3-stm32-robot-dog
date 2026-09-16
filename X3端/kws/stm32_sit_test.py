@@ -81,8 +81,10 @@ def main():
     print(f"[test] 收到 {len(buf)} 字节: {buf.hex() if buf else '(空)'}")
 
     # 3) 解析 ACK(cmd=0x09 → ack_cmd=0x89)
+    # ACK 帧格式: AA 55 [data_len] [cmd|0x80] [status] [data...] [csum]
+    # status 占 1 字节,无额外 data 时 data_len=1(不是 2)
     ACK_CMD = 0x89
-    head = bytes([0xAA, 0x55, 0x02, ACK_CMD])
+    head = bytes([0xAA, 0x55, 0x01, ACK_CMD])  # 修正: 0x01 不是 0x02
     if head in buf:
         idx = buf.find(head)
         if len(buf) >= idx + 5:
