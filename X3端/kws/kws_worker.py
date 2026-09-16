@@ -22,11 +22,38 @@ import argparse
 import asyncio
 import base64
 import json
+import os
 import socket
 import sys
 import time
 
 import kws_protocol as P
+
+
+# dog_uart.py 在 X3 端根目录 (X3 上是 /root/),不在 /root/kws/。
+# 这里让 import 时自动找上级目录,无论 worker 从哪启动都不会失败。
+def _bootstrap_dog_uart():
+    try:
+        from dog_uart import DogLink  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+    # X3 部署: /root/kws/kws_worker.py → 上级 /root/ 是 dog_uart 所在
+    here = os.path.dirname(os.path.abspath(__file__))
+    parent = os.path.dirname(here)
+    if parent and parent not in sys.path:
+        sys.path.insert(0, parent)
+    try:
+        from dog_uart import DogLink  # noqa: F401
+    except ModuleNotFoundError as e:
+        raise SystemExit(
+            f"[worker] dog_uart.py 找不到: {e}\n"
+            f"  X3 部署应在 /root/dog_uart.py;\n"
+            f"  PC 测试时需保证 dog_uart.py 在 sys.path。"
+        )
+
+
+_bootstrap_dog_uart()
 
 
 # === JSON line 协议 ===
