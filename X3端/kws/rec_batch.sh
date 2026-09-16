@@ -73,5 +73,7 @@ ls -la "$OUT_DIR"
 
 echo ""
 echo "scp 回 PC:"
-echo "  scp -i ~/.ssh/id_ed25519 -r root@192.168.160.112:/root/kws/test_wavs \\"
+echo "  # 先在 X3 上跑 'ip a' 查实际 IP(用户用热点,IP 经常变):"
+echo "  export X3_IP=\$(ip a show wlan0 | awk '/inet /{print \$2}' | cut -d/ -f1)"
+echo "  scp -i ~/.ssh/id_ed25519 -r root@\${X3_IP}:/root/kws/test_wavs \\"
 echo "    C:/Users/17402/Desktop/机器狗/PC端/brain/tests/voice_commands/"
