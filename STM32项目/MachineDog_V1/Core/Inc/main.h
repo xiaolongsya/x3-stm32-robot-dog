@@ -75,11 +75,12 @@ extern "C" {
  *     id=4 FL 肩    STAND=2000(+100 偏置)  P 增=往后转(平衡), P 减=往前转
  *     id=5 FL 小腿  STAND=1400  P 增=往前转(降), P 减=往后转(升)
  *     id=6 BL 肩    STAND=1900  P 增=往后转(平衡), P 减=往前转
- *     id=7 BL 小腿  STAND=1580(+80 偏置)   P 增=往前转(降), P 减=往后转(升)
+ *     id=7 BL 小腿  STAND=1480   P 增=往前转(降), P 减=往后转(升)
+ *                                                          [2026-09-16: 取消 +80 偏置 (1580→1480)]
  *
- * 安全活动范围(2026-09-14 stepping.c 里 SERVO_STEP):
+ * 安全活动范围(2026-09-16 stepping.c 里 SERVO_STEP):
  *   - 4 小腿:宽度都 = 700
- *     BR(900-1600),FR(900-1600),FL(1400-2100),BL(1430-1730)
+ *     BR(900-1600),FR(900-1600),FL(1400-2100),BL(1480-2180)
  *   - 4 肩:宽度都 = 1600
  *     BR(700-2300),FR(700-2300),FL(800-2400),BL(700-2300)
  *   范围根据 STAND ±X 自动生成,详细见 stepping.c 的 SERVO_STEP 表
@@ -95,9 +96,9 @@ extern "C" {
 
 /* --- 后左腿 BL --- */
 #define SERVO_SHOULDER_BL_STAND   1900  /* 左后肩:PB0/TIM3_CH3/servo6  ↑身体高 / ↓身体低 */
-#define SERVO_SHIN_BL_STAND       1580  /* 左后小腿:PA8/TIM1_CH1/servo7 ↑身体高 / ↓身体低 */
-                                                          /* 2026-09-14:从 1480 改成 1580(+80 偏置) */
-                                                          /* 2026-09-16:按 PCB 网表 + CubeMX 配回 CH1 (PA8) */
+#define SERVO_SHIN_BL_STAND       1480  /* 左后小腿:PA8/TIM1_CH1/servo7 ↑身体高 / ↓身体低 */
+                                                          /* 2026-09-16:取消 +80 偏置 (1580→1480,正站立) */
+                                                          /* 2026-09-16:CubeMX 配回 CH1 (PA8) */
 
 /* --- 后右腿 BR --- */
 #define SERVO_SHOULDER_BR_STAND   1100  /* 右后肩:PA3/TIM15_CH2/servo1  ↑身体高 / ↓身体低 */

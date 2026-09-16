@@ -53,12 +53,18 @@ extern "C" {
 #define MOTION_BOB       3  /* 站立↔蹲下 循环 */
 #define MOTION_SHIN_TEST 4  /* 小腿范围测试 */
 
+/* === ACTION_PLAY (0x09) 高级动作 id (2026-09-16 加)== */
+#define ACTION_SIT_DOWN       5   /* 任意 → SIT_REAL 渐进 800ms */
+#define ACTION_STAND_UP       6   /* 任意 → STAND 渐进 800ms */
+#define ACTION_SIT_TO_STAND   7   /* SIT_TO_STAND 别名 = STAND_UP */
+#define ACTION_STAND_TO_SIT   8   /* STAND_TO_SIT 别名 = SIT_DOWN */
+
 /* === 小腿范围测试参数(2026-09-13 临时)===========================
  * 改这个值烧录 → 4 条小腿同时偏移 → 看哪个先堵转 → 找极限
  * 正值 = 小腿向"收"方向;负值 = 向"伸"方向
  * 右小腿(BR id 0, FR id 2):1500 - offset(P 减 = 收)
  * 左小腿(FL id 5, BL id 7):1500 + offset(P 增 = 收,镜像)
- * BL 小腿含结构偏差:-40 基线,1500-40=1460 + offset
+ * 2026-09-16:BL 小腿取消 +80 偏置,与其他小腿对齐,纯 1500 ± offset
  */
 #define TEST_SHIN_OFFSET  600
 
@@ -97,6 +103,13 @@ const char *motion_get_name(void);
  * 实现细节:沿用 motion_init() 的状态机,但允许带运行时参数
  */
 void motion_play_by_id(uint8_t id, uint32_t duration_ms);
+
+/* === ACTION_PLAY 入口 (2026-09-16 加)===
+ * id 1..4: 走 motion_play_by_id()(既有)
+ * id 5..8: ramp 动作(本函数处理)
+ * duration_ms >0 → ramp 时长(ms);=0 → SIT_RAMP_MS 默认
+ */
+void motion_play_action(uint8_t id, uint32_t duration_ms);
 
 /* === 调度接口(主循环) ===
  *

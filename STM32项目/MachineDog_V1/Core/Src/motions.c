@@ -23,6 +23,7 @@
 #include "motions.h"
 #include "stepping.h"
 #include "main.h"
+#include "ramp.h"
 
 /* htim6 在 tim.c 定义,stepping.c 引用(TIM6 100Hz 步态中断) */
 extern TIM_HandleTypeDef htim6;
@@ -43,10 +44,38 @@ static void apply_sit_neutral(void) {
   }
 }
 
+/* === SIT 真实下蹲姿态(2026-09-16 重整)==                          =======================
+ * 2026-09-16 重大修正:取消 BL shin +80 偏置 (STAND 1580→1480)
+ *   - 旧代码 SIT_REAL_PWM[7]=1980 但 SERVO_LIMIT[7]=[1430,1730] 宽度只有 300
+ *     → 1980 被 clamp 到 1730, BL 只走 150/500 (30%) 所以蹲下"瞬间到位"
+ *   - 新 STAND=1480, SERVO_LIMIT=[1480,2180], target=1980 → +500 与其他小腿一致
+ * 4 小腿向"腿收"方向偏移 + 4 肩保持 STAND
+ * 全部从 SERVO_*_STAND 派生,在 SERVO_LIMIT 范围内
+ *
+ * 腿"收"方向 (PWM 偏移 ±500,左右舵机镜像):
+ *   - BR shin: STAND=1600, 收=1100 (P 减,右腿)
+ *   - FR shin: STAND=1600, 收=1100 (P 减,右腿)
+ *   - FL shin: STAND=1400, 收=1900 (P 增,左腿镜像)
+ *   - BL shin: STAND=1480, 收=1980 (P 增,左腿镜像,2026-09-16 改)
+ * 4 肩保持 STAND 不动
+ */
+static const uint16_t SIT_REAL_PWM[8] = {
+  1100,                          /* 0  BR shin:1600 → 1100(P 减,收 500) */
+  SERVO_SHOULDER_BR_STAND,       /* 1  BR shoulder:STAND 1100 */
+  1100,                          /* 2  FR shin:1600 → 1100(P 减,收 500) */
+  SERVO_SHOULDER_FR_STAND,       /* 3  FR shoulder:STAND 1100 */
+  SERVO_SHOULDER_FL_STAND,       /* 4  FL shoulder:STAND 2000(+100 偏置) */
+  1900,                          /* 5  FL shin:1400 → 1900(P 增,镜像,收 500) */
+  SERVO_SHOULDER_BL_STAND,       /* 6  BL shoulder:STAND 1900 */
+  1980,                          /* 7  BL shin:1480 → 1980(P 增,镜像,收 500, 2026-09-16 改) */
+};
+
+
 /* === 应用 TROT_STAND 到 8 路舵机(中立,无前倾)======================
- * 6 路用 STAND(前后肩 + 前 4 个小腿之外的 6 路),2 个小腿改成中立
- *   - BR shin:1500(STAND=1600,改中立避免前倾水平分量)
- *   - BL shin:1500-40=1460(STAND=1580 含 +80 偏置,改中立保留偏差)
+ * 2026-09-16 重整:取消 BL shin +80 偏置,BL 也用纯中立 1500
+ * 6 路用 STAND,BR shin 改中立(STAND=1600=MAX 是前倾,改 1500 中立避免水平分量干扰 trot)
+ *   - BR shin:1500(中立)
+ *   - BL shin:1500(中立,2026-09-16 从 1460 改 1500)
  * 用于 trot 起踏/停踏瞬间,身体不前倾
  */
 static const uint16_t trot_stand_pwm[8] = {
@@ -57,7 +86,7 @@ static const uint16_t trot_stand_pwm[8] = {
   SERVO_SHOULDER_FL_STAND,       /* 4  FL 肩:STAND 2000(+100 偏置) */
   SERVO_SHIN_FL_STAND,           /* 5  FL 小腿:STAND 1400 */
   SERVO_SHOULDER_BL_STAND,       /* 6  BL 肩:STAND 1900 */
-  1460,                          /* 7  BL 小腿:1500-40=1460(STAND 1580 含 +80 偏置,中立) */
+  1500,                          /* 7  BL 小腿:1500(中立,2026-09-16 改) */
 };
 
 static void apply_trot_stand(void) {
@@ -70,6 +99,14 @@ static void apply_trot_stand(void) {
 static MotionPhase phase = MOTION_PHASE_INIT;
 static uint32_t    boot_tick_ms = 0;
 static const Motion *current = NULL;
+
+/* === duration 运行时覆盖 (2026-09-16 修复)===
+ * 背景:MOTION_TABLE 是 const,在 flash (ld .rodata → FLASH)
+ *   原代码 ((Motion*)current)->duration_s = X 是 no-op,运行时写入被忽略,
+ *   导致 X3 发 trot 5 实际跑 30s(表的默认值)
+ * 修复:用这个 RAM 变量覆盖,0 表示沿用表的 duration_s
+ */
+static uint16_t g_duration_override_s = 0;
 
 /* === 各动作 setup() ================================================*/
 
@@ -125,8 +162,11 @@ static void motion_trot_tick(void) {
       stepping_start_trot();
       trot_started_ms = now;
     }
-  } else if (current->duration_s > 0u) {
-    if ((now - trot_started_ms) >= (uint32_t)current->duration_s * 1000u) {
+  } else {
+    /* 2026-09-16 修复:g_duration_override_s 优先于 current->duration_s
+     * 见 motion_play_by_id(),MOTION_TABLE 在 flash,运行时改 const 无效 */
+    uint16_t dur_s = g_duration_override_s ? g_duration_override_s : current->duration_s;
+    if (dur_s > 0u && (now - trot_started_ms) >= (uint32_t)dur_s * 1000u) {
       stepping_stop();
       phase = MOTION_PHASE_DONE;
     }
@@ -211,14 +251,14 @@ void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
 
   /* 切到新动作 */
   current = next;
-  /* 覆盖 duration(只在调用方传入非 0 时,允许 0 表示沿用表里的值或无限)*/
-  if (duration_ms > 0) {
-    /* TROT 表里 duration_s=30 → 这里用 ms,但 Motion 字段是 uint16 s
-     * 简化:duration_ms 截断到秒,只对 TROT 有意义(其他动作 0=无限) */
-    /* 不直接改 const 表里的值,改通过 local var 走 tick */
-    /* 简化:不修改表,调用方传 0 时按表里值(BOB/SHIN_TEST 默认无限) */
-    /* duration_ms 暂不实现精确 ms 计时,留给未来 */
-  }
+  /* 覆盖 duration(2026-09-16 修复)
+   * ⚠️ MOTION_TABLE 在 flash (ld .rodata → FLASH),改 const 是 no-op。
+   *    必须用 RAM 变量 g_duration_override_s,让 motion_trot_tick 取用。
+   * 语义:
+   *   - duration_ms > 0 → 用入参作为本次动作 duration(秒)
+   *   - duration_ms = 0 → 0 = 沿用表的 duration_s (0 表示无限)
+   */
+  g_duration_override_s = (uint16_t)(duration_ms / 1000u);
 
   /* 同步状态变量 */
   boot_tick_ms = HAL_GetTick();
@@ -234,6 +274,7 @@ void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
 
 void motion_init(void) {
   boot_tick_ms = HAL_GetTick();
+  g_duration_override_s = 0;  /* 上电默认用表的 duration_s */
   phase = MOTION_PHASE_INIT;
 
   /* 找 MOTION_ID 对应的动作 */
@@ -256,6 +297,64 @@ void motion_init(void) {
 }
 
 void motion_poll(void) {
+  /* 1) ramp 推进(任意动作下都可能活跃) */
+  ramp_tick();
+
   if (current == NULL || current->tick == NULL) return;
   current->tick();
+}
+
+/* === ACTION_PLAY 入口 (2026-09-16 加)===
+ * id 1..4: 走 motion_play_by_id()(既有动作)
+ * id 5..8: ramp 动作(SIT_DOWN / STAND_UP / SIT_TO_STAND / STAND_TO_SIT)
+ *
+ * duration_ms 语义:
+ *   = 0  → 用 SIT_RAMP_MS 默认 800ms
+ *   > 0  → 用入参作为 ramp 时长(典型 500~1500ms)
+ *
+ * 实现:任何 ramp 启动前先 stepping_stop() 防止相位错位
+ */
+#define SIT_RAMP_MS  800u
+#define STAND_RAMP_MS 1200u  // 站起慢一点，更平滑
+
+/* ramp 完成回调:清状态(状态机视角的 ACT_IDLE 由 current==NULL 表达) */
+static void on_ramp_complete_idle(void) {
+  /* ramp 完成后清 current(状态机进入 ACT_IDLE) */
+  current = NULL;
+  phase   = MOTION_PHASE_DONE;
+}
+
+void motion_play_action(uint8_t id, uint32_t duration_ms) {
+  /* 任何 ramp 启动前先停 stepping */
+  stepping_stop();
+
+  if (id <= 4) {
+    /* 既有动作:STAND/TROT/BOB/SHIN_TEST */
+    motion_play_by_id(id, duration_ms);
+    return;
+  }
+  if (id < 5 || id > 8) return;
+
+  uint32_t ms = (duration_ms > 0) ? duration_ms : SIT_RAMP_MS;
+
+  switch (id) {
+    case ACTION_SIT_DOWN:       /* 5: 任意 → SIT_REAL */
+    case ACTION_STAND_TO_SIT:   /* 8: 别名 */
+      ramp_cancel();
+      ramp_sit_to_target(SIT_REAL_PWM, ms, on_ramp_complete_idle);
+      break;
+    case ACTION_STAND_UP:       /* 6: 任意 → STAND */
+    case ACTION_SIT_TO_STAND:   /* 7: 别名 */
+    {
+      ramp_cancel();
+      uint16_t stand_pwm[8];
+      for (uint8_t i = 0; i < 8; i++) stand_pwm[i] = SERVO_STEP[i].stand;
+      /* stand 动作专用 ramp 时间，覆盖默认的 ms */
+      uint32_t stand_ms = (duration_ms > 0) ? duration_ms : STAND_RAMP_MS;
+      ramp_sit_to_target(stand_pwm, stand_ms, on_ramp_complete_idle);
+      break;
+    }
+    default:
+      break;
+  }
 }

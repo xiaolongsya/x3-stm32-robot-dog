@@ -212,6 +212,27 @@ static void dispatch_frame(const uint8_t *f, uint8_t total_len) {
       commands_send_ack(cmd, 0, NULL, 0);
       break;
     }
+    case 0x09: {  /* ACTION_PLAY: [action_id u8, repeat u8, params...]
+                  * action_id: 5=SIT_DOWN 6=STAND_UP 7=SIT_TO_STAND 8=STAND_TO_SIT
+                  * repeat:     重复次数 (1=单次, >1 循环)
+                  * params:     后续参数(预留, 忽略)
+                  */
+      if (len < 2) { commands_send_ack(cmd, 3, NULL, 0); return; }
+      uint8_t action_id = d[0];
+      uint8_t repeat    = d[1];
+      if (action_id < 1 || action_id > 8) {
+        commands_send_ack(cmd, 3, NULL, 0);
+        return;
+      }
+      if (repeat < 1) repeat = 1;
+      /* 协议层不实现 repeat, 由 X3 端循环调用实现
+       * 收到一次就执行一次(渐进 ramp 在 STM32 端跑完) */
+      (void)repeat;
+      motion_play_action(action_id, 0);
+      commands_send_ack(cmd, 0, NULL, 0);
+      watchdog_reset();
+      break;
+    }
     default:
       commands_send_ack(cmd, 2, NULL, 0);  /* BAD_CMD */
       break;

@@ -50,6 +50,7 @@
 #include "stepping.h"
 #include "main.h"
 #include <math.h>
+#include "ramp.h"   /* ramp_is_active() */
 
 /* htim6 在 tim.c 定义,stepping.c 引用(TIM6 100Hz 步态中断) */
 extern TIM_HandleTypeDef htim6;
@@ -96,7 +97,8 @@ extern TIM_HandleTypeDef htim6;
  * SERVO_LIMIT 根据 2026-09-14 用户拍板统一规则:
  *   - 4 小腿宽度都 = 700
  *   - 4 肩宽度都 = 1600
- * FL 肩 / BL 小腿 因为 +100 / +80 机械偏置,需要更宽限位
+ * FL 肩 因为 +100 机械偏置,需要更宽限位
+ * 2026-09-16:BL 小腿取消 +80 偏置,STAND=1480,实际行程 1480-2180
  *
  *   id  名称      STAND   is_right  SERVO_LIMIT(min,max)
  *   0   BR 小腿   SERVO_SHIN_BR_STAND     right     (900, 1600)
@@ -106,7 +108,7 @@ extern TIM_HandleTypeDef htim6;
  *   4   FL 肩     SERVO_SHOULDER_FL_STAND left      (800, 2400)
  *   5   FL 小腿   SERVO_SHIN_FL_STAND     left      (1400, 2100)
  *   6   BL 肩     SERVO_SHOULDER_BL_STAND left      (700, 2300)
- *   7   BL 小腿   SERVO_SHIN_BL_STAND     left      (1430, 1730)
+ *   7   BL 小腿   SERVO_SHIN_BL_STAND     left      (1480, 2180)
  */
 /* stepping.h 里 typedef + extern,这里定义实体 */
 const ServoStep SERVO_STEP[8] = {
@@ -117,7 +119,7 @@ const ServoStep SERVO_STEP[8] = {
   /*4  FL 肩   */ {SERVO_SHOULDER_FL_STAND,  0, 800,  2400},
   /*5  FL 小腿 */ {SERVO_SHIN_FL_STAND,      0, 1400, 2100},
   /*6  BL 肩   */ {SERVO_SHOULDER_BL_STAND,  0, 700,  2300},
-  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,      0, 1430, 1730},
+  /*7  BL 小腿 */ {SERVO_SHIN_BL_STAND,      0, 1480, 2180},
 };
 
 /* === 状态 =========================================================*/
@@ -145,25 +147,26 @@ static void stepping_apply_stand(void) {
   }
 }
 
-/* === 应用 TROT_STAND 到 8 路舵机(2026-09-13 用户拍板)===
+/* === 应用 TROT_STAND 到 8 路舵机(2026-09-16 重整)===
  *
  * 与 SERVO_STEP[i].stand 的区别:
- *   - STAND:用户标定的前倾站立(用于 sit/stand 循环,前倾 + BR/BL 小腿极限位)
- *   - TROT_STAND:6 路用 STAND,后小腿改成中立(避免前倾水平分量干扰 trot)
- *     - BR shin:1500(STAND 是 1600=MAX,改中立)
- *     - BL shin:1460(STAND 是 1400=MIN,改中立 1500-40=1460 保持结构偏差)
+ *   - STAND:正站立 2026-09-16 取消 BL shin +80 偏置 (STAND 1580→1480)
+ *   - TROT_STAND:BR shin 改中立(STAND=1600=MAX 是前倾,改 1500 中立避免水平分量干扰 trot)
+ *     - BR shin:1500(中立)
+ *     - BL shin:1500(中立,2026-09-16 从 1460 改 1500)
+ * 其他 6 路用 STAND 不动
  *
- * 用于 trot 起踏/停踏瞬间,身体不前倾,前后小腿中立
+ * 用于 trot 起踏/停踏瞬间,身体不前倾
  */
 static const uint16_t trot_stand_pwm[8] = {
-  1500,                          /* 0  BR 小腿(STAND=1600,改中立) */
-  SERVO_SHOULDER_BR_STAND,       /* 1  BR 肩(=STAND 1150) */
-  SERVO_SHIN_FR_STAND,           /* 2  FR 小腿(=STAND 1500) */
-  SERVO_SHOULDER_FR_STAND,       /* 3  FR 肩(=STAND 1200) */
-  SERVO_SHOULDER_FL_STAND,       /* 4  FL 肩(=STAND 1820,保留 +80 偏差) */
-  SERVO_SHIN_FL_STAND,           /* 5  FL 小腿(=STAND 1500) */
-  SERVO_SHOULDER_BL_STAND,       /* 6  BL 肩(=STAND 1850) */
-  1460,                          /* 7  BL 小腿(STAND=1400,改中立 1500-40) */
+  1500,                          /* 0  BR 小腿(STAND=1600=MAX,改中立) */
+  SERVO_SHOULDER_BR_STAND,       /* 1  BR 肩(=STAND 1100) */
+  SERVO_SHIN_FR_STAND,           /* 2  FR 小腿(=STAND 1600) */
+  SERVO_SHOULDER_FR_STAND,       /* 3  FR 肩(=STAND 1100) */
+  SERVO_SHOULDER_FL_STAND,       /* 4  FL 肩(=STAND 2000) */
+  SERVO_SHIN_FL_STAND,           /* 5  FL 小腿(=STAND 1400) */
+  SERVO_SHOULDER_BL_STAND,       /* 6  BL 肩(=STAND 1900) */
+  1500,                          /* 7  BL 小腿(STAND=1480,改中立 1500,2026-09-16) */
 };
 
 static void stepping_apply_trot_stand(void) {
@@ -251,6 +254,11 @@ void stepping_init(void) {
 void stepping_start_trot(void) {
   /* 主循环调用 — 不 printf (2026-09-12 防 printf 阻塞 UART 卡死 main loop) */
   /* 2026-09-13:用 TROT_STAND(中立位)替代前倾 STAND,起踏更稳 */
+  /* 如果 ramp 活跃，完全不能启动 stepping */
+  if (ramp_is_active()) {
+    return;
+  }
+
   stepping_apply_trot_stand();
   step_state = STEPPING_TROT;
   step_t_phase = 0.0f;
@@ -272,6 +280,12 @@ void stepping_stop(void) {
 void stepping_tick(void) {
   /* ⚠️ TIM6 ISR 调用 — 不能 printf */
   if (step_state != STEPPING_TROT) return;
+
+  /* 如果 ramp 活跃，立即停止 stepping（蹲下时踏步必须停） */
+  if (ramp_is_active()) {
+    step_state = STEPPING_IDLE;
+    return;
+  }
 
   step_t_phase += STEP_T_INC;
   if (step_t_phase >= 1.0f) step_t_phase -= 1.0f;

@@ -24,6 +24,7 @@
 #include "watchdog.h"   /* 2026-09-14 心跳超时守护 */
 #include "buzzer.h"     /* 2026-09-14 蜂鸣器 PA11 */
 #include "diagnostic.h" /* 2026-09-16 上电诊断标记 (从 main.c 搬出, 见 diagnostic.c) */
+#include "ramp.h"       /* 2026-09-16 SIT/STAND 渐进 ramp, motion_poll() 自动调 ramp_tick() */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,6 +73,8 @@ void SystemClock_Config(void);
  * 2026-09-11 移除 current_pwm 跟踪,gait.c 已删,无其他模块需要 */
 void set_servo_pulse(uint8_t id, uint16_t pulse) {
   if (pulse < 500 || pulse > 2500) return;
+  /* 2026-09-16:同步给 ramp.c 的 g_pwm 跟踪,ramp 起点采样用 */
+  motions_track_pwm(id, pulse);
   switch (id) {
     case 0: __HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_1, pulse); break;
     case 1: __HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_2, pulse); break;
@@ -178,6 +181,8 @@ int main(void)
 
   /* 上电诊断标记(发 '1' '2' '3' '5' '6' 'B',tabby 看到 = STM32 跑到这步) */
   diagnostic_init();
+  /* 2026-09-16:蜂鸣器初始化 */
+  buzzer_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
