@@ -15,7 +15,7 @@
 - **8-servo direct drive**: MG90S × 8 (no PCA9685) on STM32 timers
 - **Compact PCB**: 4-layer, 80×80mm (JLC free-coupon sized)
 - **Standalone power**: 2× LM2596 + AMS1117, separate logic & servo rails
-- **Sensor stack**: MPU6050 IMU + SSD1306 OLED + HC-SR04 ultrasonic + battery monitor + buzzer
+- **Sensor stack**: MPU6050 IMU + SSD1306 OLED + HC-SR04 ultrasonic + battery monitor (蜂鸣器 2026-09-16 链路作废,硬件保留不驱动)
 - **Local gait**: STM32 runs balance & stepping; high-level MCU sends commands via UART
 - **Open-source friendly**: MIT license, KiCad files, gerbers, BOM, STM32 firmware all public
 
@@ -51,7 +51,7 @@
 | I2C bus | MPU6050 + SSD1306 OLED + 2× 4.7kΩ pull-up | ¥8 |
 | Servos | 8× MG90S + 2× 12-pin headers (H5/H6) | ¥80 |
 | Battery | 2S 18650 6800mAh (蓝火新能源) + XT30 pigtail | ¥5 |
-| Sensors | HC-SR04 + buzzer + battery monitor (R15/R16) | ¥5 |
+| Sensors | HC-SR04 + battery monitor (R15/R16); ~~buzzer~~(2026-09-16 已废) | ¥5 |
 | Switch | Ship-type SW1 + 3.3V bus capacitors | ¥1 |
 | Connectors | USB-C (debug), J1/J2 (debug), OLED | ¥2 |
 | **Total** | **52 components** | **~¥127** |
@@ -123,13 +123,13 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
   - `stepping.c/h` (2026-09-14) — 对角 trot,8 路同步线性 ramp (TIM6 100Hz ISR)
   - `ramp.c/h` (2026-09-16) — 8 路 PWM 同步渐进 ramp (SIT/STAND 用,主循环调 ramp_tick)
   - `watchdog.c/h` (2026-09-14) — TIM7 1kHz,200ms 无心跳自动回 STAND
-  - `buzzer.c/h` (2026-09-14) — PA11 有源蜂鸣器
+  - ~~`buzzer.c/h` (2026-09-14) — PA11 有源蜂鸣器~~ (2026-09-16 作废)
 - **当前二进制协议命令集**(STM32 commands.h):
   - `0x01 MOTION_PLAY [id u8, dur_ms u32 LE]` (id 1..4 走 motions 表)
   - `0x03 SET_PWM [(id u8, pulse u16 LE) * N]`
   - `0x05 HEARTBEAT []` (X3 心跳 100ms 一发)
   - `0x06 EMERGENCY_STOP []`
-  - `0x07-08 BUZZER_ON/OFF`
+  - ~~`0x07-08 BUZZER_ON/OFF`~~ (2026-09-16 作废)
   - `0x09 ACTION_PLAY [action_id u8, repeat u8]` (id 5..8 走 ramp SIT/STAND)
 - **X3 端工具**:
   - `/root/dog_uart.py` (X3端/dog_uart.py) — sit / stand / squat / trot / bob / beep / seq / stop / pwm / raw
