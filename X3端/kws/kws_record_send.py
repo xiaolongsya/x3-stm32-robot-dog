@@ -346,8 +346,8 @@ def main():
     ap.add_argument("--baud",     type=int, default=DEFAULT_BAUD)
     ap.add_argument("--pc-url",   default=DEFAULT_PC_URL)
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESH)
-    # cooldown 默认 5s:任务完成后固定冷却,防回声/机械声连环触发
-    ap.add_argument("--cooldown",  type=float, default=5.0)
+    # cooldown 默认 10s:任务完成后固定冷却,防回声/机械声连环触发
+    ap.add_argument("--cooldown",  type=float, default=10.0)
     args = ap.parse_args()
 
     asyncio.run(run(args))
