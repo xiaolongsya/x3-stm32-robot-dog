@@ -13,7 +13,7 @@
 消息格式(JSON 文本,每条以 \\n 结尾,newline-delimited JSON):
 
   listener → worker (唤醒触发后立即发):
-    {"type":"wake","ts":<float>,"score":<float>,"rms":<int>,"pre_pcm_b64":<str>}
+    {"type":"wake_detected","ts":<float>,"score":<float>,"rms":<int>,"pre_pcm_b64":<str>}
       pre_pcm_b64 = 唤醒前 1.5s PCM (int16 LE mono 16kHz) 的 base64
       worker 用来对 ASR 文本做对齐(可选,目前未用)
 
@@ -82,9 +82,9 @@ def decode_pcm(b64_str: str) -> bytes:
 
 
 # === JSON 消息构造 ===
-def msg_wake(ts: float, score: float, rms: int, pre_pcm: bytes) -> str:
+def msg_wake_detected(ts: float, score: float, rms: int, pre_pcm: bytes) -> str:
     return json.dumps({
-        "type": "wake",
+        "type": "wake_detected",
         "ts": ts,
         "score": score,
         "rms": rms,

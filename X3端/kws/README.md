@@ -117,8 +117,9 @@ arecord ──► kws_listener.py(独占麦克风)──── Unix socket ─�
 
 **回退**: 旧版单进程 `kws_record_send.py` 保留,标注 deprecated,出问题可一键切回:
 ```bash
-mv /root/kws/start_kws_dual.sh /root/kws/start_kws_dual.sh.bak
-/root/kws/start_kws_action.sh    # 旧版
+# 双进程先停(前台 Ctrl+C 或杀 worker+listener)
+# 然后直接跑单进程 fallback(它自带 oww buffer reset 治标补丁)
+python3 /root/kws/kws_record_send.py --pc-url ws://192.168.160.91:8765
 ```
 
 **架构决策 commit 链**:
