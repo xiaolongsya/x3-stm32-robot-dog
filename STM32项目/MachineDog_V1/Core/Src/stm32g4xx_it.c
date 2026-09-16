@@ -25,7 +25,6 @@
 #include "stepping.h"   /* 100Hz 步态 tick,在 TIM6_DAC_IRQHandler 里调 */
 #include "commands.h"   /* 2026-09-14:X3 协议 IDLE 中断回调 */
 #include "watchdog.h"   /* 2026-09-14:TIM7 心跳扫描 */
-#include "buzzer.h"     /* 2026-09-14:蜂鸣器计时 */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/

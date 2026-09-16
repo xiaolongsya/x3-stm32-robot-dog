@@ -22,7 +22,6 @@
 #include "motions.h"
 #include "commands.h"   /* 2026-09-14 X3 协议入口 */
 #include "watchdog.h"   /* 2026-09-14 心跳超时守护 */
-#include "buzzer.h"     /* 2026-09-14 蜂鸣器 PA11 */
 #include "diagnostic.h" /* 2026-09-16 上电诊断标记 (从 main.c 搬出, 见 diagnostic.c) */
 #include "ramp.h"       /* 2026-09-16 SIT/STAND 渐进 ramp, motion_poll() 自动调 ramp_tick() */
 /* USER CODE END Includes */
@@ -87,6 +86,21 @@ void set_servo_pulse(uint8_t id, uint16_t pulse) {
   }
 }
 
+/* 2026-09-16:蜂鸣器作废(用户拍板),PA11(BUZZER_CTRL 原蜂鸣器驱动脚)
+ * 改为输出低,保持静默。硬件(R5 + Q1 SS8050 + D3 + BUZZER1)保留在板上不驱动。
+ * 如果未来复用 PA11 为其他 GPIO,可改这里或加新 init。
+ */
+static void pa11_silent_init(void) {
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  GPIO_InitTypeDef gpio = {0};
+  gpio.Pin   = GPIO_PIN_11;
+  gpio.Mode  = GPIO_MODE_OUTPUT_PP;
+  gpio.Pull  = GPIO_NOPULL;
+  gpio.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &gpio);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_11, GPIO_PIN_RESET);
+}
+
 /* 2026-09-14:text 命令解析搬到 commands.c(text 兼容模式),
  * binary 协议也由 commands.c 处理。这里不再有 parse_uart_command / uart_poll。*/
 /* USER CODE END 0 */
@@ -143,8 +157,8 @@ int main(void)
    * X3 端跑 listen_booted.py 监听 ttyS3,收到 BOOT 说明:
    *   - STM32 跑到了 main()
    *   - USART1 TX 通路正常(PA9 输出)
-   * 蜂鸣器(PBeeper 接 PA11)响 = STM32 跑到这里
    * 8 路被强制设 1500(蹲下 / 腿伸直) = 证明 PWM 输出也正常
+   * (2026-09-16:删掉'蜂鸣器响 = 跑到这里'那行,蜂鸣器链路作废)
    */
   /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit -> 必须手动启动 HAL_TIM_PWM_Start
    * 注意:set_servo_pulse 必须在 HAL_TIM_PWM_Start 之后 */
@@ -181,8 +195,8 @@ int main(void)
 
   /* 上电诊断标记(发 '1' '2' '3' '5' '6' 'B',tabby 看到 = STM32 跑到这步) */
   diagnostic_init();
-  /* 2026-09-16:蜂鸣器初始化 */
-  buzzer_init();
+  /* 2026-09-16:蜂鸣器作废,PA11(BUZZER_CTRL) 输出低保持静默(原 buzzer_init() 替换) */
+  pa11_silent_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */

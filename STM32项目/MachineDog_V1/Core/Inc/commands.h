@@ -22,9 +22,10 @@
   *   0x03 SET_PWM        data: [(id u8, pulse u16 LE) * N], N = len/3
   *   0x05 HEARTBEAT      data: []  (仅用于 reset watchdog)
   *   0x06 EMERGENCY_STOP data: []  (立即回 STAND,等价 MOTION_PLAY id=1)
-  *   0x07 BUZZER_ON      data: [freq_hz u16 LE, dur_ms u16 LE]
-  *                       freq_hz 忽略(有源蜂鸣器固定 2.7kHz),dur_ms=0 = 无限响
-  *   0x08 BUZZER_OFF     data: []  (立即停蜂鸣器)
+  *   0x07 ~~BUZZER_ON~~   data: ~~[freq_hz u16 LE, dur_ms u16 LE]~~
+  *                       2026-09-16 作废,X3 不发,STM32 收到回 BAD_CMD(2)
+  *   0x08 ~~BUZZER_OFF~~  data: ~~[]  (立即停蜂鸣器)~~
+  *                       2026-09-16 作废,同上
   *   0x09 ACTION_PLAY    data: [action_id u8, repeat u8, params...]
   *                       action_id: 5=SIT_DOWN 6=STAND_UP 7=SIT_TO_STAND 8=STAND_TO_SIT
   *                                  (1..4 走 MOTION_PLAY 命令,本命令不处理)

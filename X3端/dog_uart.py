@@ -9,8 +9,7 @@
     python3 dog_uart.py squat 5        # 蹲下起立循环 5 次
     python3 dog_uart.py trot 10        # 踏步 10 秒
     python3 dog_uart.py bob 15         # 蹲起循环动作 15 秒
-    python3 dog_uart.py beep 3         # 鸣叫 3 声
-    python3 dog_uart.py seq "sit 2; stand 1; beep 2; squat 3"   # 动作组合
+    python3 dog_uart.py seq "sit 2; stand 1; squat 3"   # 动作组合
     python3 dog_uart.py stop           # 急停(立即回 STAND)
     python3 dog_uart.py pwm 0 1500     # 单路舵机
     python3 dog_uart.py raw AA5505...  # 原始帧
@@ -40,8 +39,6 @@ CMD_MOTION_PLAY     = 0x01
 CMD_SET_PWM         = 0x03
 CMD_HEARTBEAT       = 0x05
 CMD_EMERGENCY_STOP  = 0x06
-CMD_BUZZER_ON       = 0x07
-CMD_BUZZER_OFF      = 0x08
 CMD_ACTION_PLAY     = 0x09
 
 # === ACTION_PLAY 动作 id(motions.c 2026-09-16) ===
@@ -175,16 +172,7 @@ class DogLink:
     def bob(self, seconds=15.0):
         return self.motion(3, int(seconds * 1000))
 
-    def beep(self, times=1, ms=200, gap=0.3):
-        """有源蜂鸣器鸣叫 times 声"""
-        for i in range(times):
-            print(f"--- beep {i + 1}/{times} ---")
-            self.cmd(CMD_BUZZER_ON, struct.pack("<HH", 2700, ms))
-            time.sleep(ms / 1000.0)
-            self.cmd(CMD_BUZZER_OFF)
-            if i < times - 1:
-                time.sleep(gap)
-        return True
+    # 2026-09-16:def beep() 移除,蜂鸣器链路作废
 
     def emergency_stop(self):
         return self.cmd(CMD_EMERGENCY_STOP)
@@ -219,9 +207,6 @@ def run_seq(link: DogLink, spec: str):
             sec = float(args[0]) if args else 15.0
             link.bob(sec)
             time.sleep(sec)
-        elif name == "beep":
-            times = int(args[0]) if args else 1
-            link.beep(times)
         elif name == "wait":
             time.sleep(float(args[0]) if args else 1.0)
         else:
@@ -244,10 +229,7 @@ def main():
     p.add_argument("hold", type=float, nargs="?", default=1.0)
     p = sub.add_parser("trot");  p.add_argument("sec", type=float, nargs="?", default=10.0)
     p = sub.add_parser("bob");   p.add_argument("sec", type=float, nargs="?", default=15.0)
-    p = sub.add_parser("beep")
-    p.add_argument("times", type=int, nargs="?", default=1)
-    p.add_argument("--ms", type=int, default=200)
-    p.add_argument("--gap", type=float, default=0.3)
+    # 2026-09-16:beep 子命令移除,蜂鸣器链路作废
     p = sub.add_parser("seq");   p.add_argument("spec")
     sub.add_parser("stop")
     p = sub.add_parser("pwm");   p.add_argument("id", type=int); p.add_argument("pulse", type=int)
@@ -266,8 +248,7 @@ def main():
             link.trot(a.sec); time.sleep(a.sec)
         elif a.cmd_name == "bob":
             link.bob(a.sec); time.sleep(a.sec)
-        elif a.cmd_name == "beep":
-            link.beep(a.times, a.ms, a.gap)
+        # 2026-09-16:beep 命令移除,蜂鸣器链路作废
         elif a.cmd_name == "seq":
             run_seq(link, a.spec)
         elif a.cmd_name == "stop":

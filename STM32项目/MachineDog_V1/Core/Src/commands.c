@@ -22,7 +22,6 @@
 #include "stepping.h"
 #include "motions.h"
 #include "watchdog.h"
-#include "buzzer.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -200,18 +199,7 @@ static void dispatch_frame(const uint8_t *f, uint8_t total_len) {
       watchdog_reset();
       break;
     }
-    case 0x07: {  /* BUZZER_ON: [freq_hz u16 LE, dur_ms u16 LE] = 4 bytes */
-      if (len != 4) { commands_send_ack(cmd, 3, NULL, 0); return; }
-      uint16_t dur = (uint16_t)d[2] | ((uint16_t)d[3] << 8);
-      buzzer_on(dur);
-      commands_send_ack(cmd, 0, NULL, 0);
-      break;
-    }
-    case 0x08: {  /* BUZZER_OFF */
-      buzzer_off();
-      commands_send_ack(cmd, 0, NULL, 0);
-      break;
-    }
+    /* 2026-09-16:0x07/0x08 蜂鸣器命令作废,代码移除 */
     case 0x09: {  /* ACTION_PLAY: [action_id u8, repeat u8, params...]
                   * action_id: 5=SIT_DOWN 6=STAND_UP 7=SIT_TO_STAND 8=STAND_TO_SIT
                   * repeat:     重复次数 (1=单次, >1 循环)
