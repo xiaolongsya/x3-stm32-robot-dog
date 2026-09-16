@@ -94,7 +94,10 @@ def compute_rms(pcm_bytes: bytes) -> int:
     return int(np.sqrt(np.mean(samples.astype(float) ** 2)))
 
 
-SILENCE_RMS_THRESHOLD = 500   # 帧 RMS < 500 视为静音(可根据麦克风调)
+SILENCE_RMS_THRESHOLD = 500   # 帧 RMS < 500 视为静音(VAD 终止条件)
+RMS_KWS_LOW = 100               # KWS 评分前 RMS 下限(< 此值 = 没人说话,跳过)
+RMS_KWS_HIGH = 3500             # KWS 评分前 RMS 上限(> 此值 = 狗机械声/拍桌/噪声,跳过)
+MAX_COOLDOWN = 60.0             # cooldown 累加上限(秒)
 
 
 class X3KWSBrainLink:
@@ -112,6 +115,7 @@ class X3KWSBrainLink:
         self.pc_url = pc_url
         self.last_wake_ts = 0.0
         self.mode = "kws"
+        self.consecutive_false_wakes = 0  # 连续误唤醒计数(用于 cooldown 累加)
 
         # STM32 串口
         self.ser = serial.Serial(port, baud, timeout=0.5)
@@ -141,9 +145,14 @@ class X3KWSBrainLink:
             return None
 
         if self.mode == "kws":
-            # 唤醒冷却:距离上次唤醒 < cooldown,不评分(避免录音回声二次触发)
+            # 唤醒冷却:距离上次唤醒 < cooldown,不评分
             now = time.time()
             if now - self.last_wake_ts < self.cooldown:
+                return None
+            # RMS 预筛:狗机械声 RMS 很高(>3500),人说话 RMS 中等(100-3500)
+            # 跳过纯静音(<100)和疑似机械噪声(>3500),只让中间区间评分
+            rms = compute_rms(chunk)
+            if rms < RMS_KWS_LOW or rms > RMS_KWS_HIGH:
                 return None
             pcm = np.frombuffer(chunk, dtype=np.int16)
             preds = self.oww.predict(pcm)
@@ -156,7 +165,7 @@ class X3KWSBrainLink:
             except (TypeError, IndexError):
                 return None
             if score >= self.threshold:
-                print(f"[kws] 🌟 唤醒 score={score:.3f} → 开始录音")
+                print(f"[kws] 🌟 唤醒 score={score:.3f} rms={rms} → 开始录音")
                 self.mode = "recording"
                 self.record_buffer = [chunk]
                 self.silence_chunks = 0
@@ -301,14 +310,29 @@ async def run(args):
                     else:
                         print("[brain] 无响应")
                 finally:
-                    # 误唤醒:cooldown × 3(防回声连环触发)
+                    # cooldown 累加:误唤醒计数 → effective cooldown
+                    # 1 次: base
+                    # 2 次: base × 3
+                    # 3+ 次: base × 5,封顶 MAX_COOLDOWN
                     base_cooldown = args.cooldown
-                    effective_cooldown = base_cooldown * 3 if false_wake else base_cooldown
+                    if false_wake:
+                        self.consecutive_false_wakes += 1
+                        if self.consecutive_false_wakes <= 1:
+                            multiplier = 1.0
+                        elif self.consecutive_false_wakes == 2:
+                            multiplier = 3.0
+                        else:
+                            multiplier = 5.0
+                    else:
+                        self.consecutive_false_wakes = 0
+                        multiplier = 1.0
+                    effective_cooldown = min(base_cooldown * multiplier, MAX_COOLDOWN)
                     elapsed = time.time() - link.last_wake_ts
                     remaining = max(0, effective_cooldown - elapsed)
                     if remaining > 0:
                         if false_wake:
-                            print(f"[kws] ⚠️ 误唤醒(ASR 空),延长 cooldown ×3 → 剩余 {remaining:.1f}s")
+                            print(f"[kws] ⚠️ 误唤醒×{self.consecutive_false_wakes},"
+                                  f"cooldown={effective_cooldown:.1f}s,剩余 {remaining:.1f}s")
                         else:
                             print(f"[kws] 冷却剩余 {remaining:.1f}s,继续屏蔽 KWS")
                         await asyncio.sleep(remaining)
