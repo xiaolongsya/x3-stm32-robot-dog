@@ -249,6 +249,21 @@ void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
   /* 注意:在 isr-context 不能调,但 motion_play_by_id 来自 main loop / 命令处理,安全 */
   stepping_stop();
 
+  /* 取消 ramp 残留(2026-09-16 修:H1/H2/H6 一并修)
+   *
+   * 根因:ramp 在 tick() 内每帧写 8 路 PWM,如果切动作不先 ramp_cancel(),
+   *   ramp.active 仍为 1,主循环 ramp_tick() 会立刻把目标 PWM 覆盖回来
+   *
+   * 影响 3 条路径:
+   *   - H1: EMERGENCY_STOP (commands.c:197 motion_play_by_id(1,0)) — STAND 被 ramp 覆盖
+   *   - H2: 任意 MOTION_PLAY 切动作                          — 目标姿态被 ramp 覆盖
+   *   - H6: WATCHDOG 超时回 STAND (watchdog.c motion_play_by_id(1,0)) — 同 H1
+   *
+   * 安全:ramp_cancel 只翻 flag,g_pwm[] 保持当前值;新动作的 setup() 会
+   *   重新写 8 路,所以"取消 ramp 后舵机姿态"由新动作决定,不丢控制
+   */
+  ramp_cancel();
+
   /* 切到新动作 */
   current = next;
   /* 覆盖 duration(2026-09-16 修复)
