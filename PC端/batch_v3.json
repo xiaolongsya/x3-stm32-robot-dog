@@ -1,0 +1,82 @@
+[
+  {
+    "idx": "01.wav",
+    "expected": "���ѽ,����Զ�����?",
+    "asr": "���ѽ����Զ�����",
+    "actions": "ACTION_PLAY#5",
+    "reply": "�õ�",
+    "ms": 5249
+  },
+  {
+    "idx": "02.wav",
+    "expected": "̤��3��",
+    "asr": "̤��3��",
+    "actions": "MOTION_PLAY#2/3000ms",
+    "reply": "��,��3��",
+    "ms": 754
+  },
+  {
+    "idx": "03.wav",
+    "expected": "����!",
+    "asr": "����",
+    "actions": "EMERGENCY_STOP#",
+    "reply": "�õ�",
+    "ms": 361
+  },
+  {
+    "idx": "04.wav",
+    "expected": "����5������վ������",
+    "asr": "����5������վ������",
+    "actions": "ACTION_PLAY#5,",
+    "reply": "MOTION_PLAY#2/5   �õ�",
+    "ms": 1021
+  },
+  {
+    "idx": "05.wav",
+    "expected": "�ڶ�һ����ǰ��",
+    "asr": "�ڶ�һ����ǰ��",
+    "actions": "(��)",
+    "reply": "�һ��������,����������",
+    "ms": 487
+  },
+  {
+    "idx": "06.wav",
+    "expected": "�ڶ�һ����粿",
+    "asr": "�ڶ�һ����粿",
+    "actions": "(��)",
+    "reply": "�һ��������,����������",
+    "ms": 470
+  },
+  {
+    "idx": "07.wav",
+    "expected": "��������5��",
+    "asr": "��������5��",
+    "actions": "ACTION_PLAY#5,",
+    "reply": "ACTION_PLAY#6,    ��,5��",
+    "ms": 1390
+  },
+  {
+    "idx": "08.wav",
+    "expected": "С����,����Զ�����?",
+    "asr": "С��������Զ�����",
+    "actions": "ACTION_PLAY#5",
+    "reply": "�õ�",
+    "ms": 430
+  },
+  {
+    "idx": "09.wav",
+    "expected": "С����,��һ��",
+    "asr": "С������һ��",
+    "actions": "ACTION_PLAY#5",
+    "reply": "�õ�",
+    "ms": 429
+  },
+  {
+    "idx": "10.wav",
+    "expected": "��ǰ��һ��",
+    "asr": "��ǰ��һ��",
+    "actions": "(��)",
+    "reply": "�һ�������ǰ��,��������",
+    "ms": 472
+  }
+]

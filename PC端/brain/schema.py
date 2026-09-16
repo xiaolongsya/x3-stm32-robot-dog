@@ -27,7 +27,7 @@ ACTION_SCHEMA = {
     "properties": {
         "actions": {
             "type": "array",
-            "maxItems": 8,
+            "maxItems": 16,
             "items": {
                 "type": "object",
                 "properties": {
