@@ -277,4 +277,28 @@ void TIM7_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 
+/* === 2026-09-16 修 H5:TIM7 watchdog 接线 ===
+ *
+ * 背景:TIM7 启了 Base_IT,但原代码只在 TIM7_IRQHandler 调 HAL_TIM_IRQHandler,
+ *   HAL 默认通过 __weak HAL_TIM_PeriodElapsedCallback 回调,
+ *   用户代码未 override → watchdog_poll() 从未执行,
+ *   200ms 无心跳回 STAND 的逻辑是死代码,链路"假通"
+ *
+ * 修复:override HAL_TIM_PeriodElapsedCallback,按 htim 路由到对应 tick
+ *   - TIM6 (100Hz): stepping_tick (ISR 里直接调,不走 callback 也行,但走 callback 统一管理)
+ *   - TIM7 (1kHz):  watchdog_poll(每 tick 检查 last_heartbeat_ms)
+ *
+ * 注意:
+ *   - HAL 的 __weak 会被用户 override,本函数覆盖全局默认
+ *   - stepping_tick 在 TIM6_DAC_IRQHandler 也直接调了,这里再调一次是冗余
+ *     但避免未来给 TIM6 加 callback 时漏掉 stepping → 用 htim == &htim6 防御
+ *   - TIM7 必须调 watchdog_poll,因为这是它的唯一调度入口
+ */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+  if (htim->Instance == TIM7) {
+    watchdog_poll();
+  }
+  /* TIM6 stepping_tick 由 TIM6_DAC_IRQHandler 显式调,这里不重复 */
+}
+
 /* USER CODE END 1 */
