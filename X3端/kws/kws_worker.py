@@ -118,6 +118,25 @@ class KWSWorker:
             print(f"[worker] ERR send ready: {e}", flush=True)
 
     # === LLM actions → STM32 ===
+    # 2026-09-16 修 M3:多条 ramp 类 action 之间要等待 STM32 实际执行完
+    # 不然会"瞬间 cancel + 重启 ramp",前 N-1 条全部浪费
+    #
+    # 时长(STM32 motions.c):
+    #   - ACTION_PLAY SIT (id=5/8):  SIT_RAMP_MS = 800ms
+    #   - ACTION_PLAY STAND (id=6/7): STAND_RAMP_MS = 1200ms
+    #   - MOTION_PLAY (id=1..4): 时长不等,默认 30s/无限
+    #   - EMERGENCY_STOP: 瞬间
+    #
+    # 实际我们不等 STM32 跑完完整 ramp,只插一段"最小可视时长"避免立刻被下一条覆盖
+    # 这样 6 条 [蹲立蹲立蹲立] ≈ 6 × 1s ≈ 6s 完成,有明显节奏
+    RAMP_MIN_HOLD_MS = {
+        # ACTION_PLAY id → 最小 hold ms(SIT_RAMP_MS 或 STAND_RAMP_MS)
+        5: 1000,   # SIT_DOWN 800ms + 留 200ms 视觉停留
+        6: 1400,   # STAND_UP 1200ms + 200ms
+        7: 1400,   # SIT_TO_STAND 同 STAND_UP
+        8: 1000,   # STAND_TO_SIT 同 SIT_DOWN
+    }
+
     def translate_and_send(self, actions: list):
         """LLM actions list → DogLink.action / motion / emergency_stop"""
         for a in actions:
@@ -127,11 +146,16 @@ class KWSWorker:
                 dur = a.get("duration_ms", 0)
                 self.dog.action(aid, dur)
                 print(f"[worker] stm32 → ACTION_PLAY #{aid} dur={dur}ms", flush=True)
+                # M3 fix: ramp 类动作之间 sleep 等 STM32 跑完,避免下一条立刻覆盖
+                hold_ms = self.RAMP_MIN_HOLD_MS.get(aid, 0)
+                if hold_ms > 0:
+                    time.sleep(hold_ms / 1000.0)
             elif cmd == "MOTION_PLAY":
                 mid = a.get("id")
                 dur = a.get("duration_ms", 5000)
                 self.dog.motion(mid, dur)
                 print(f"[worker] stm32 → MOTION_PLAY #{mid} dur={dur}ms", flush=True)
+                # MOTION_PLAY 不插 sleep,它的 duration_ms 由 STM32 tick 自动结束
             elif cmd == "EMERGENCY_STOP":
                 self.dog.emergency_stop()
                 print(f"[worker] stm32 → EMERGENCY_STOP", flush=True)
@@ -173,12 +197,22 @@ class KWSWorker:
             actions = resp.get("actions", [])
             reply = resp.get("reply", "")
             print(f"[worker] brain reply: {reply}", flush=True)
-            if actions and not false_wake:
-                self.translate_and_send(actions)
-            elif false_wake:
-                print(f"[worker] 录音 {duration_s:.2f}s 误唤醒跳过动作", flush=True)
-            else:
-                print("[worker] actions 空,不当误唤醒", flush=True)
+            # 2026-09-16 修 H3:EMERGENCY_STOP 必须无条件执行,不进 false_wake 旁路
+            # 根因:用户短促说"停!"或"立正!"可能 < 2s,被误判 false_wake 后静默丢
+            # 修复:把 actions 拆成"紧急动作"(EMERGENCY_STOP,立即执行)
+            #        和"普通动作"(其他,受 false_wake 旁路保护)
+            if actions:
+                urgent = [a for a in actions if a.get("cmd") == "EMERGENCY_STOP"]
+                normal = [a for a in actions if a.get("cmd") != "EMERGENCY_STOP"]
+                if urgent:
+                    print(f"[worker] 紧急动作 {len(urgent)} 条无视 false_wake", flush=True)
+                    self.translate_and_send(urgent)
+                if normal and not false_wake:
+                    self.translate_and_send(normal)
+                elif normal and false_wake:
+                    print(f"[worker] 录音 {duration_s:.2f}s 误唤醒跳过 {len(normal)} 条普通动作", flush=True)
+                if not actions:
+                    print("[worker] actions 空,不当误唤醒", flush=True)
         elif resp and resp.get("type") == "error":
             print(f"[worker] brain error: {resp.get('code')} {resp.get('reply')}", flush=True)
         else:
@@ -221,11 +255,18 @@ class KWSWorker:
                         continue
                     self.handle_wake(msg)
                 elif mtype == "recording_done":
-                    if self.state != "busy":
+                    # 2026-09-16 修 H4:busy 状态拒绝第二条 recording_done
+                    # 根因:用户连说两句话时,前一句的 actions 还没发完 STM32,
+                    #   第二条 recording_done 触发新的 handle_recording_done,
+                    #   asyncio.run 把前一个 event loop 中断,actions 列表后半段丢失
+                    # 修复:busy 时直接 drop,不进入 handle_recording_done
+                    if self.state == "busy":
                         print(
-                            "[worker] WARNING: recording_done but state != busy",
+                            "[worker] busy, drop recording_done (前一句还没处理完)",
                             flush=True,
                         )
+                        continue
+                    self.state = "busy"  # 提前占位,避免 race
                     # 启动 asyncio 处理 WS 上送 + STM32 翻译
                     asyncio.run(self.handle_recording_done(msg))
                 elif mtype == "error":
