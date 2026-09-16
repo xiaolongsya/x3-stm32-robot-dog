@@ -364,7 +364,8 @@ def main():
     ap.add_argument("--baud",     type=int, default=DEFAULT_BAUD)
     ap.add_argument("--pc-url",   default=DEFAULT_PC_URL)
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESH)
-    ap.add_argument("--cooldown",  type=float, default=10.0)
+    # cooldown 默认 0:busy + queue drain 已经保证唤醒间隔,cooldown 冗余
+    ap.add_argument("--cooldown",  type=float, default=0.0)
     args = ap.parse_args()
 
     asyncio.run(run(args))
