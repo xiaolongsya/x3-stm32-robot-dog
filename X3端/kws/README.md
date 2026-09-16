@@ -78,3 +78,51 @@ scp -i ~/.ssh/id_ed25519 -r root@192.168.33.112:/home/root/voice_data ./voice_da
 数据回传到 PC 后,跑 `train_xiaolong.py`(在 PC 上训练)。
 
 训练出的 `xiaolong.onnx` 再 scp 回 X3 部署(`kws_realtime_oww.py` 留待从 legacy 迁过来)。
+
+---
+
+## 运行时架构 — 双进程 KWS (2026-09-16 重构)
+
+X3 端运行时拆成两个进程,通过 Unix domain socket 通信,**根因解决** openWakeWord stateful audio buffer 在单进程长任务流里被冻结导致的二次唤醒。
+
+```
+arecord ──► kws_listener.py(独占麦克风)──── Unix socket ────► kws_worker.py(独占 STM32 串口)
+              • oww.predict() 永远 80ms 一帧                       • DogLink 100ms heartbeat
+              • RMS 预筛 + score ≥ 0.85                            • 听 wake_detected → 切 busy
+              • ring buffer 永远滚动(预录 1.5s)                   • 听 recording_done → WS brain
+              • 唤醒 → 发 wake_detected                              → 翻译 actions → STM32 帧
+              • VAD 录音 → 发 recording_done                        • 发回 ready 通知 listener
+```
+
+**为什么拆**:
+- openWakeWord 是 stateful 模型,内部 6s sliding audio buffer
+- 单进程里 oww 被 13s 长任务(录音 + ASR + LLM + STM32)冻结 → buffer 残留"小龙"音频 → 二次唤醒
+- 拆双进程后 listener 永远调 predict,buffer 持续被新鲜 PCM 替换,根因消除
+- 早期 `kws_record_send.py` 单进程版本用 cooldown + oww buffer reset 治标(commit 84ec2ac + 8fd5d1c),已 deprecated
+
+**文件清单**:
+| 文件 | 行数 | 职责 |
+|---|---|---|
+| `kws_protocol.py` | 141 | IPC 常量 + JSON line schema + PCM 编解码(纯 stdlib) |
+| `kws_listener.py` | 191 | 独占麦克风,永远 oww.predict(),ring buffer + VAD 录音 |
+| `kws_worker.py` | 239 | 独占 STM32,听 wake/recording,WS brain + 翻译 actions |
+| `start_kws_dual.sh` | 40 | 一键拉起 worker(后台) + arecord\|listener(前台),trap cleanup |
+
+**用法**:
+```bash
+# 在 X3 上,前端会话跑:
+/root/kws/start_kws_dual.sh
+# 默认连 ws://192.168.160.91:8765,可用 PC_URL=ws://... 覆盖
+```
+
+**回退**: 旧版单进程 `kws_record_send.py` 保留,标注 deprecated,出问题可一键切回:
+```bash
+mv /root/kws/start_kws_dual.sh /root/kws/start_kws_dual.sh.bak
+/root/kws/start_kws_action.sh    # 旧版
+```
+
+**架构决策 commit 链**:
+- `86a07a2` — kws_protocol.py(IPC 协议)
+- `72503f0` — kws_listener.py + start_kws_dual.sh(KWS 常驻)
+- `9bee03e` — kws_worker.py(业务进程,复用 DogLink)
+- `e6c6ca5` — 标 kws_record_send.py 为 deprecated
