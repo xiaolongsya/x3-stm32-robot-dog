@@ -1,0 +1,18 @@
+# requirements.txt — PC 端 brain 服务依赖 (2026-09-16)
+# Python 3.13.5 + Windows + RTX 5070 Ti (Blackwell)
+
+# === WS 服务器 ===
+websockets>=12.0
+
+# === LLM (Ollama OpenAI 兼容接口) ===
+openai>=1.40
+
+# === ASR (FunASR + SenseVoiceSmall) ===
+funasr>=1.2
+# torch 装 cu128 版本(Blackwell sm_120 要求)
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
+torch>=2.5
+
+# === 音频 ===
+soundfile>=0.12
+numpy>=1.24
