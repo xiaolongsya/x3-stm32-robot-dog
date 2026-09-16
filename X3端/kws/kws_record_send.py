@@ -277,28 +277,41 @@ async def run(args):
             chunk = await queue.get()
             pcm = await asyncio.to_thread(link.process_chunk, chunk)
             if pcm:
-                # 录音完毕 → 进入 busy 状态(屏蔽 KWS,防回声触发)
+                # 录音完毕 → busy 状态(屏蔽 KWS,防回声)
                 await asyncio.to_thread(link.set_busy, True)
+                # 误唤醒信号:大概率是回声/噪声 → 等会延长 cooldown
+                false_wake = False
                 try:
-                    # 上传 brain → 等 action
                     resp = await link.send_to_brain(pcm)
                     if resp and resp.get("type") == "action":
                         actions = resp.get("actions", [])
                         reply = resp.get("reply", "")
                         print(f"[brain] reply: {reply}")
-                        # 翻译发 STM32
-                        await asyncio.to_thread(link.translate_and_send_actions, actions)
+                        if actions:
+                            # 真有动作:发 STM32
+                            await asyncio.to_thread(link.translate_and_send_actions, actions)
+                        else:
+                            # actions=空:LLM 判定"不在能力范围"或"无动作"
+                            # 但用户**真的说了话**,只是不能做 → 当作正常唤醒
+                            print("[brain] actions 空(可能超出能力),不当误唤醒")
                     elif resp and resp.get("type") == "error":
                         print(f"[brain] error: {resp.get('code')} {resp.get('reply')}")
+                        if resp.get("code") == "ASR_FAIL":
+                            false_wake = True  # ASR 失败 = 录音里没人说话 = 误唤醒
                     else:
                         print("[brain] 无响应")
                 finally:
-                    # 不管成功失败,busy 维持到 cooldown 期满(防 dog 动作噪声触发)
-                    # 用 sleep + 延时设回 kws;cooldown 期内 KWS 评分也会被跳过
-                    cooldown_remaining = max(0, args.cooldown - (time.time() - link.last_wake_ts))
-                    if cooldown_remaining > 0:
-                        print(f"[kws] 冷却剩余 {cooldown_remaining:.1f}s,继续屏蔽 KWS")
-                        await asyncio.sleep(cooldown_remaining)
+                    # 误唤醒:cooldown × 3(防回声连环触发)
+                    base_cooldown = args.cooldown
+                    effective_cooldown = base_cooldown * 3 if false_wake else base_cooldown
+                    elapsed = time.time() - link.last_wake_ts
+                    remaining = max(0, effective_cooldown - elapsed)
+                    if remaining > 0:
+                        if false_wake:
+                            print(f"[kws] ⚠️ 误唤醒(ASR 空),延长 cooldown ×3 → 剩余 {remaining:.1f}s")
+                        else:
+                            print(f"[kws] 冷却剩余 {remaining:.1f}s,继续屏蔽 KWS")
+                        await asyncio.sleep(remaining)
                     await asyncio.to_thread(link.set_busy, False)
     except KeyboardInterrupt:
         print("\n[kws] Bye")
