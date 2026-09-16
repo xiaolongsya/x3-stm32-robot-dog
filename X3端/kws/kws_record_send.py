@@ -314,12 +314,14 @@ async def run(args):
                     else:
                         print("[brain] 无响应")
                 finally:
-                    # 任务完成后 cooldown 固定 5s(防回声/机械声/尾音连环触发)
-                    elapsed = time.time() - link.last_wake_ts
-                    remaining = max(0, args.cooldown - elapsed)
-                    if remaining > 0:
-                        print(f"[kws] 任务完成,冷却 {remaining:.1f}s")
-                        await asyncio.sleep(remaining)
+                    # 任务完成后 cooldown 强制 sleep 完整配置值(2026-09-16 修复)
+                    # 原版条件 sleep `max(0, cooldown - elapsed)` 会被 ASR 首调 SenseVoiceSmall
+                    # + Ollama qwen3:8b 首 token 延迟 8-15s 直接吃掉,remaining 算成 0,无 sleep,
+                    # set_busy(False) 立即切回 kws,下一个 chunk 进 oww.predict() 命中旧"小龙"
+                    # 残音 → 第二次唤醒(commit 84ec2ac 已加 oww buffer reset,这里补一刀)。
+                    # 改成无条件 await asyncio.sleep(args.cooldown) 强制睡满配置值。
+                    print(f"[kws] 任务完成,强制 cooldown {args.cooldown:.1f}s")
+                    await asyncio.sleep(args.cooldown)
                     # 清空 queue 里累积的"陈旧"chunk(录音期间 + cooldown 期内)
                     # 这些 chunk 可能含 dog 动机械声 / 房间回声
                     # 直接丢弃,从 fresh audio 开始
