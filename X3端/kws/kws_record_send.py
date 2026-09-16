@@ -198,7 +198,9 @@ class X3KWSBrainLink:
         pcm = b"".join(self.record_buffer)
         print(f"[rec] 录音完成 {len(pcm)} bytes ({len(pcm)/32000:.2f}s)")
         self.record_buffer = []
-        self.mode = "kws"
+        # 关键:这里设 "busy" 而不是 "kws",防止主循环拿到 pcm 之前的窗口期
+        # KWS 误判录音期间的 chunk(set_busy 在主循环里调用,有 race condition)
+        self.mode = "busy"
         self.silence_chunks = 0
         return pcm
 
