@@ -364,10 +364,10 @@ def main():
     ap.add_argument("--baud",     type=int, default=DEFAULT_BAUD)
     ap.add_argument("--pc-url",   default=DEFAULT_PC_URL)
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESH)
-    # cooldown 默认 3s:防止 KWS 持续高分(清空 queue 后仍存在的音频)连环触发
-    # 太短(<2s) 会连环误触,太长(>5s) UX 差。3s 是平衡点
+    # cooldown 默认 5s:防止 KWS 持续高分(清空 queue 后仍存在的音频)连环触发
+    # 3s 太短,5s 是平衡点(连二次触发都拦掉)
     # 误唤醒会触发累加(×3, ×5, 封顶 60s)
-    ap.add_argument("--cooldown",  type=float, default=3.0)
+    ap.add_argument("--cooldown",  type=float, default=5.0)
     args = ap.parse_args()
 
     asyncio.run(run(args))
