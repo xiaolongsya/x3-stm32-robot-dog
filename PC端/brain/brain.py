@@ -110,20 +110,33 @@ class BrainServer:
     async def _process_utterance(self, ws, ws_id, sess: Session, pcm_bytes):
         t0 = time.time()
         # 1) ASR
+        t_asr0 = time.time()
         text = await asyncio.to_thread(self.asr.transcribe, pcm_bytes)
+        asr_ms = int((time.time() - t_asr0) * 1000)
         if not text:
             await ws.send(json.dumps({
                 "type": MSG_ERROR,
                 "code": "ASR_FAIL",
                 "reply": "我没听清,再说一遍",
             }))
+            log.warn(f"[ws={ws_id}] ASR 空输出(可能是静音/噪声)")
             return
-        log.info(f"ws_id={ws_id} ASR: '{text}'")
+        log.info(f"[ws={ws_id}] ASR {asr_ms}ms: '{text}'")
         # 2) LLM
+        t_llm0 = time.time()
         user_prompt = build_user_prompt(sess.history, text)
         result = await self.llm.chat(SYSTEM_PROMPT, user_prompt, timeout=LLM_TIMEOUT_S)
+        llm_ms = int((time.time() - t_llm0) * 1000)
         actions = result["actions"]
         reply = result["reply"]
+        # LLM 解析详情
+        actions_short = ", ".join(
+            f"{a['cmd']}#{a.get('id','')}" + (f"/{a.get('duration_ms')}ms" if 'duration_ms' in a else "")
+            for a in actions
+        ) or "(空)"
+        log.info(
+            f"[ws={ws_id}] LLM  {llm_ms}ms: actions=[{actions_short}] reply='{reply}'"
+        )
         # 3) 历史
         sess.add_turn(text, actions, reply)
         # 4) 发给 X3
@@ -132,10 +145,9 @@ class BrainServer:
             "actions": actions,
             "reply": reply,
         }))
-        t1 = time.time()
+        total_ms = int((time.time() - t0) * 1000)
         log.info(
-            f"ws_id={ws_id} total {int((t1 - t0) * 1000)}ms: "
-            f"{len(actions)} actions, reply='{reply[:40]}'"
+            f"[ws={ws_id}] total {total_ms}ms (asr={asr_ms} + llm={llm_ms})"
         )
 
 
