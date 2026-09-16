@@ -338,6 +338,18 @@ async def run(args):
                         else:
                             print(f"[kws] 冷却剩余 {remaining:.1f}s,继续屏蔽 KWS")
                         await asyncio.sleep(remaining)
+                    # 清空 queue 里累积的"陈旧"chunk(录音期间 + cooldown 期内)
+                    # 这些 chunk 可能含 dog 动机械声 / 房间回声
+                    # 直接丢弃,从 fresh audio 开始
+                    drained = 0
+                    while not queue.empty():
+                        try:
+                            queue.get_nowait()
+                            drained += 1
+                        except asyncio.QueueEmpty:
+                            break
+                    if drained > 0:
+                        print(f"[kws] 清空 queue {drained} 个陈旧 chunk")
                     await asyncio.to_thread(link.set_busy, False)
     except KeyboardInterrupt:
         print("\n[kws] Bye")
