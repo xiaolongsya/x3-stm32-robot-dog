@@ -290,20 +290,24 @@ async def run(args):
             if pcm:
                 # 录音完毕 → busy 状态(屏蔽 KWS,防回声)
                 await asyncio.to_thread(link.set_busy, True)
-                # 误唤醒信号:大概率是回声/噪声 → 等会延长 cooldown
-                false_wake = False
+                # 误唤醒判断:录音时长 < 2s = VAD 静音提前结束 = 没人说话
+                # (用户正常说话至少 2-3s,太短说明 KWS 误触发了)
+                pcm_duration_s = len(pcm) / 32000
+                false_wake = pcm_duration_s < 2.0
                 try:
                     resp = await link.send_to_brain(pcm)
                     if resp and resp.get("type") == "action":
                         actions = resp.get("actions", [])
                         reply = resp.get("reply", "")
                         print(f"[brain] reply: {reply}")
-                        if actions:
-                            # 真有动作:发 STM32
+                        if actions and not false_wake:
+                            # 真有动作 + 录音够长:发 STM32
                             await asyncio.to_thread(link.translate_and_send_actions, actions)
+                        elif false_wake:
+                            # 录音 < 2s 即便 LLM 给动作也不做(可能是误触发)
+                            print(f"[brain] 录音仅 {pcm_duration_s:.2f}s,误唤醒跳过动作")
                         else:
-                            # actions=空:LLM 判定"不在能力范围"或"无动作"
-                            # 但用户**真的说了话**,只是不能做 → 当作正常唤醒
+                            # actions=空:用户说了话但能力外,当作正常唤醒
                             print("[brain] actions 空(可能超出能力),不当误唤醒")
                     elif resp and resp.get("type") == "error":
                         print(f"[brain] error: {resp.get('code')} {resp.get('reply')}")
