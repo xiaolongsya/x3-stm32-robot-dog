@@ -103,32 +103,47 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 | v1 PCB Layout | ✅ Complete (3 rounds review, 0 blockers) |
 | v1 Fabrication | ✅ Complete |
 | v1 Board Bring-up | ✅ Complete (2026-09-09) |
-| STM32 Firmware | ✅ 站立 + 蹲起循环 + 对角踏步;8 路舵机已标定 |
-| High-level MCU | ⏳ 旭日 X3 2.0 待到货 |
+| STM32 Firmware | ✅ 站立 + 蹲起循环 + 对角踏步 + X3 协议 + ramp SIT/STAND |
+| High-level MCU | ✅ 旭日 X3 2.0 上线 (UART ↔ STM32, KWS) |
 
-### v1 板子当前状态(2026-09-14 整理)
+### v1 板子当前状态(2026-09-16 重整)
 
-- **8 路舵机 STAND 标定完成**(2026-09-14 最新):
-  - 6 路标准:BR/FR 小腿=1600,BR/FR 肩=1100,FL 小腿=1400,BL 肩=1900
-  - 2 路机械偏置:FL 肩=2000(+100),BL 小腿=1580(+80)
+- **8 路舵机 STAND 标定完成**(2026-09-16 重整为"正站立"):
+  - 6 路标准:BR/FR 小腿=1600, BR/FR 肩=1100, FL 小腿=1400, **BL 小腿=1480** (取消 +80 偏置)
+  - 2 路机械偏置:FL 肩=2000 (+100), BL 肩=1900
   - PWM 中位 1500 = 大腿垂直 + 小腿水平(几何最高)
-- **安全限位 SERVO_STEP 表**(2026-09-14):
-  - 4 小腿宽度都 = 700
-  - 4 肩宽度都 = 1600
-  - FL 肩 / BL 小腿 因偏置需要更宽限位
-- **固件进度**:
-  - STM32CubeMX 8 外设配齐 (TIM1/2/3/17 × 8 路 PWM + I2C1 + USART1 + SWD + TIM6)
-  - SYSCLK = 168 MHz (HSE 8MHz × PLL ×42 / 2)
-  - `motions.c/h`(2026-09-14 整理):4 个动作(STAND / TROT / BOB / SHIN_TEST),编译时 `MOTION_ID` 切换
-  - `stepping.c/h`(2026-09-14 整理):对角 trot,8 路同步线性 ramp(sin² 抬腿曲线),PWM ±OFFSET 在 SERVO_LIMIT 内
-- **当前 UART 命令**(实测代码,2026-09-11):
-  - `<id 0-7> <pulse>` 设单路舵机、`all <pulse>` 设全部 8 路、`center` 全部 1500、`stand` STAND 姿态
-  - `step trot` 启动 trot 踏步(TIM6 100Hz)、`step stop` 停止、`step show` 调试输出
+- **安全限位 SERVO_STEP 表**(2026-09-16):
+  - 4 小腿宽度都 = 700: BR/FR(900-1600), FL(1400-2100), **BL(1480-2180)**
+  - 4 肩宽度都 = 1600: BR/FR/BL(700-2300), FL(800-2400)
+- **固件模块清单**:
+  - STM32CubeMX 9 外设 (TIM1/2/3/15/17 × 8 路 PWM + I2C1 + USART1 + SWD + TIM6/TIM7)
+  - SYSCLK = 168 MHz (HSI 16MHz × PLL ×21)
+  - `commands.c/h` (2026-09-14) — X3 ↔ STM32 二进制协议 (USART1 DMA + IDLE)
+  - `motions.c/h` (2026-09-14) — 4 动作 (STAND / TROT / BOB / SHIN_TEST) + ramp SIT/STAND 入口
+  - `stepping.c/h` (2026-09-14) — 对角 trot,8 路同步线性 ramp (TIM6 100Hz ISR)
+  - `ramp.c/h` (2026-09-16) — 8 路 PWM 同步渐进 ramp (SIT/STAND 用,主循环调 ramp_tick)
+  - `watchdog.c/h` (2026-09-14) — TIM7 1kHz,200ms 无心跳自动回 STAND
+  - `buzzer.c/h` (2026-09-14) — PA11 有源蜂鸣器
+- **当前二进制协议命令集**(STM32 commands.h):
+  - `0x01 MOTION_PLAY [id u8, dur_ms u32 LE]` (id 1..4 走 motions 表)
+  - `0x03 SET_PWM [(id u8, pulse u16 LE) * N]`
+  - `0x05 HEARTBEAT []` (X3 心跳 100ms 一发)
+  - `0x06 EMERGENCY_STOP []`
+  - `0x07-08 BUZZER_ON/OFF`
+  - `0x09 ACTION_PLAY [action_id u8, repeat u8]` (id 5..8 走 ramp SIT/STAND)
+- **X3 端工具**:
+  - `/root/dog_uart.py` (X3端/dog_uart.py) — sit / stand / squat / trot / bob / beep / seq / stop / pwm / raw
+  - `/root/kws/kws_realtime_log.py` — "小龙" 唤醒词实时识别日志
+  - `/root/kws/run_kws_log.sh` — 一键启动脚本
 - **踏步参数**(2026-09-14):
   - `STEP_TROT_OFFSET=500`、`STEP_TROT_PERIOD=0.25`、`STEP_RATIO_SHIN_TO_THIGH_X10=3`
+- **ramp SIT/STAND 时长**(2026-09-16):
+  - `SIT_RAMP_MS = 800`、`STAND_RAMP_MS = 1200`
 - **历史**:
   - Pi 时代脚本全部归档 `docs/legacy/`(2026-09-13)
   - 香橙派 Zero3 已出二手(2026-09-13),改用旭日 X3 2.0
+  - 2026-09-14 X3 到货 + 上线 USART1 DMA 协议
+  - 2026-09-16 ramp 模块 + BL 校准重构 (取消 +80 偏置) + duration_s fix
 
 ---
 
