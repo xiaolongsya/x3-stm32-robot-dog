@@ -71,7 +71,7 @@ DEFAULT_PC_URL = "ws://192.168.160.91:8765"
 
 
 # === 编码 / 解码 ===
-def encode_pcm(pcm_bytes: bytes) -> str:
+def encode_pcm_b64(pcm_bytes: bytes) -> str:
     """int16 LE PCM bytes → base64 str(JSON 安全)"""
     return base64.b64encode(pcm_bytes).decode()
 
@@ -88,7 +88,7 @@ def msg_wake(ts: float, score: float, rms: int, pre_pcm: bytes) -> str:
         "ts": ts,
         "score": score,
         "rms": rms,
-        "pre_pcm_b64": encode_pcm(pre_pcm),
+        "pre_pcm_b64": encode_pcm_b64(pre_pcm),
     })
 
 
@@ -96,7 +96,7 @@ def msg_recording_done(ts: float, pcm: bytes, duration_s: float) -> str:
     return json.dumps({
         "type": "recording_done",
         "ts": ts,
-        "pcm_b64": encode_pcm(pcm),
+        "pcm_b64": encode_pcm_b64(pcm),
         "duration_s": duration_s,
     })
 
