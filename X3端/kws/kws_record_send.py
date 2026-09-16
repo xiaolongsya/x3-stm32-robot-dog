@@ -332,6 +332,16 @@ async def run(args):
                             break
                     if drained > 0:
                         print(f"[kws] 清空 queue {drained} 个陈旧 chunk")
+                    # === KWS 二次触发根因修复(2026-09-16)===
+                    # oww Model 内部维护 6s sliding audio buffer;录音期间 mode=recording/busy
+                    # 完全不喂新数据,buffer 冻在"小龙"音频上,set_busy(False) 后下一帧 predict()
+                    # 仍会基于旧"小龙"给高分(score 0.97+),用户实测每次喊一次都触发两次唤醒。
+                    # 喂 75 × 80ms = 6s 静音把 oww buffer 整体替换成静音,score 降回 0
+                    # (cooldown 检查在 process_chunk 里另有一道防线,这里只负责 reset oww 内部状态)
+                    zero_pcm = np.zeros(1280, dtype=np.int16)
+                    for _ in range(75):
+                        link.oww.predict(zero_pcm)
+                    print(f"[kws] oww buffer reset 完成 (喂 6s 静音)")
                     await asyncio.to_thread(link.set_busy, False)
     except KeyboardInterrupt:
         print("\n[kws] Bye")
