@@ -316,22 +316,22 @@ async def run(args):
                     # 3+ 次: base × 5,封顶 MAX_COOLDOWN
                     base_cooldown = args.cooldown
                     if false_wake:
-                        self.consecutive_false_wakes += 1
-                        if self.consecutive_false_wakes <= 1:
+                        link.consecutive_false_wakes += 1
+                        if link.consecutive_false_wakes <= 1:
                             multiplier = 1.0
-                        elif self.consecutive_false_wakes == 2:
+                        elif link.consecutive_false_wakes == 2:
                             multiplier = 3.0
                         else:
                             multiplier = 5.0
                     else:
-                        self.consecutive_false_wakes = 0
+                        link.consecutive_false_wakes = 0
                         multiplier = 1.0
                     effective_cooldown = min(base_cooldown * multiplier, MAX_COOLDOWN)
                     elapsed = time.time() - link.last_wake_ts
                     remaining = max(0, effective_cooldown - elapsed)
                     if remaining > 0:
                         if false_wake:
-                            print(f"[kws] ⚠️ 误唤醒×{self.consecutive_false_wakes},"
+                            print(f"[kws] ⚠️ 误唤醒×{link.consecutive_false_wakes},"
                                   f"cooldown={effective_cooldown:.1f}s,剩余 {remaining:.1f}s")
                         else:
                             print(f"[kws] 冷却剩余 {remaining:.1f}s,继续屏蔽 KWS")
