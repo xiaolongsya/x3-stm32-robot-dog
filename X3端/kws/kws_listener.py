@@ -94,7 +94,11 @@ class KWSListener:
         self.silence_chunks = 0
 
     def _on_wake(self, conn, ts, score, rms, current_chunk):
-        """触发唤醒:快照 ring buffer → 发 wake_detected → 进 recording"""
+        """触发唤醒:快照 ring buffer → 发 wake_detected → 进 recording
+
+        注意: last_wake_ts 不在这里设!在 _on_recording_done 末尾设,
+        让 cooldown 从录音结束算起,避免录音 > cooldown 时切回 kws 立即二次触发。
+        """
         pre_pcm_bytes = np.array(self.ring, dtype=np.int16).tobytes()
         msg = {
             "type": "wake_detected",
@@ -106,7 +110,6 @@ class KWSListener:
         try:
             send_json(conn, msg)
         except (BrokenPipeError, ConnectionResetError, OSError) as e:
-            # worker 死了 — 跳过本次 wake, 继续 KWS
             print(f"[listener] ERR send wake_detected: {e}, 跳回 kws", flush=True)
             self.state = "kws"
             return
@@ -115,10 +118,13 @@ class KWSListener:
         # 把当前 chunk 也加入录音 buffer
         self.record_buf = [current_chunk]
         self.silence_chunks = 0
-        self.last_wake_ts = ts
 
     def _on_recording_done(self, conn, ts):
-        """VAD 终止:拼完整录音 → 发 recording_done → 切回 kws"""
+        """VAD 终止:拼完整录音 → 发 recording_done → 切回 kws
+
+        关键: 在这里设 last_wake_ts = ts(录音结束时刻),让 cooldown 从这里算起,
+        防止录音 > cooldown 时切回 kws 立即二次触发。
+        """
         pcm_bytes = b"".join(self.record_buf)
         duration_s = len(pcm_bytes) / (P.SAMPLE_RATE * P.SAMPLE_WIDTH)
         msg = {
@@ -138,6 +144,7 @@ class KWSListener:
             f"silence_chunks={self.silence_chunks})",
             flush=True,
         )
+        self.last_wake_ts = ts  # ← 关键: cooldown 从录音结束算起
         self.state = "kws"
         self.silence_chunks = 0
 
@@ -185,11 +192,17 @@ class KWSListener:
                         continue
 
                     # 5) ★ 触发唤醒 ★
+                    # 关键:触发前清空 ring buffer,让切回 kws 后 ring 里只有"静音",
+                    # oww 推理窗口里不会有"小龙"残留,避免切回即二次触发。
+                    self.ring.clear()
                     self.state = "recording"
                     self._on_wake(conn, now, score, rms, chunk)
 
                 else:  # recording
-                    # ring 不再写 (避免覆盖预录;反正 state 已切到 recording)
+                    # ★ 关键: 即使在 recording 也持续调 oww.predict(pcm),
+                    # 只是不评分。让 oww 内部 6s audio buffer 持续滚动,
+                    # 否则切回 kws 后 oww buffer 冻在"小龙"音频上,首帧就触发。
+                    self.oww.predict(pcm)
                     self.record_buf.append(chunk)
                     rms = compute_rms(chunk)
                     if rms < P.SILENCE_RMS_THRESHOLD:
