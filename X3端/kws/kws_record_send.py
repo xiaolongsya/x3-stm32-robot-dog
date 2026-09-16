@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """kws_record_send.py — X3 端 KWS 唤醒 → VAD 录音 → WS 上传 PC brain → STM32 执行
 
+⚠️ 2026-09-16 DEPRECATED: 单进程架构存在 oww stateful buffer 二次唤醒根因
+   (commit 84ec2ac + 8fd5d1c 打补丁只是治标)。
+   已替换为双进程架构: kws_listener.py + kws_worker.py + start_kws_dual.sh
+   本文件保留作 fallback,不删除;新部署请用 start_kws_dual.sh。
+
 2026-09-16:生产链路打通版本。
 
 链路:
