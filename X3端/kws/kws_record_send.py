@@ -97,7 +97,6 @@ def compute_rms(pcm_bytes: bytes) -> int:
 SILENCE_RMS_THRESHOLD = 500   # 帧 RMS < 500 视为静音(VAD 终止条件)
 RMS_KWS_LOW = 100               # KWS 评分前 RMS 下限(< 此值 = 没人说话,跳过)
 RMS_KWS_HIGH = 3500             # KWS 评分前 RMS 上限(> 此值 = 狗机械声/拍桌/噪声,跳过)
-MAX_COOLDOWN = 60.0             # cooldown 累加上限(秒)
 
 
 class X3KWSBrainLink:
@@ -115,7 +114,6 @@ class X3KWSBrainLink:
         self.pc_url = pc_url
         self.last_wake_ts = 0.0
         self.mode = "kws"
-        self.consecutive_false_wakes = 0  # 连续误唤醒计数(用于 cooldown 累加)
 
         # STM32 串口
         self.ser = serial.Serial(port, baud, timeout=0.5)
@@ -316,31 +314,11 @@ async def run(args):
                     else:
                         print("[brain] 无响应")
                 finally:
-                    # cooldown 累加:误唤醒计数 → effective cooldown
-                    # 1 次: base
-                    # 2 次: base × 3
-                    # 3+ 次: base × 5,封顶 MAX_COOLDOWN
-                    base_cooldown = args.cooldown
-                    if false_wake:
-                        link.consecutive_false_wakes += 1
-                        if link.consecutive_false_wakes <= 1:
-                            multiplier = 1.0
-                        elif link.consecutive_false_wakes == 2:
-                            multiplier = 3.0
-                        else:
-                            multiplier = 5.0
-                    else:
-                        link.consecutive_false_wakes = 0
-                        multiplier = 1.0
-                    effective_cooldown = min(base_cooldown * multiplier, MAX_COOLDOWN)
+                    # 任务完成后 cooldown 固定 5s(防回声/机械声/尾音连环触发)
                     elapsed = time.time() - link.last_wake_ts
-                    remaining = max(0, effective_cooldown - elapsed)
+                    remaining = max(0, args.cooldown - elapsed)
                     if remaining > 0:
-                        if false_wake:
-                            print(f"[kws] ⚠️ 误唤醒×{link.consecutive_false_wakes},"
-                                  f"cooldown={effective_cooldown:.1f}s,剩余 {remaining:.1f}s")
-                        else:
-                            print(f"[kws] 冷却剩余 {remaining:.1f}s,继续屏蔽 KWS")
+                        print(f"[kws] 任务完成,冷却 {remaining:.1f}s")
                         await asyncio.sleep(remaining)
                     # 清空 queue 里累积的"陈旧"chunk(录音期间 + cooldown 期内)
                     # 这些 chunk 可能含 dog 动机械声 / 房间回声
@@ -368,9 +346,7 @@ def main():
     ap.add_argument("--baud",     type=int, default=DEFAULT_BAUD)
     ap.add_argument("--pc-url",   default=DEFAULT_PC_URL)
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESH)
-    # cooldown 默认 5s:防止 KWS 持续高分(清空 queue 后仍存在的音频)连环触发
-    # 3s 太短,5s 是平衡点(连二次触发都拦掉)
-    # 误唤醒会触发累加(×3, ×5, 封顶 60s)
+    # cooldown 默认 5s:任务完成后固定冷却,防回声/机械声连环触发
     ap.add_argument("--cooldown",  type=float, default=5.0)
     args = ap.parse_args()
 
