@@ -93,6 +93,19 @@ X3端/kws/.venv/
 X3端/kws/model_xiaolong/
 X3端/kws/__pycache__/
 
+# ====================
+# PC 端 brain 服务(2026-09-16 加)
+# - PC端/.venv/    : venv 几百 MB,本地用,不入库
+# - PC端/**/__pycache__/ : 字节码缓存
+# - PC端/tests/*.wav : 录的测试音频(单文件大 + 个人音色)
+# - PC端/tests/*.mp3 : 同上
+# ====================
+PC端/.venv/
+PC端/**/__pycache__/
+PC端/tests/*.wav
+PC端/tests/*.mp3
+PC端/**/*.egg-info/
+
 # 审查临时目录(2026-09-02 加)
 _review_tmp/
 gerber_review/
