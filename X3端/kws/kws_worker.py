@@ -138,13 +138,22 @@ class KWSWorker:
     }
 
     def translate_and_send(self, actions: list):
-        """LLM actions list → DogLink.action / motion / emergency_stop"""
+        """LLM actions list → DogLink.action / motion / emergency_stop
+
+        返回 (ok_count, fail_count)
+        2026-09-17 加:此前 DogLink 的返回值被完全忽略,发送失败静默丢失
+        """
+        ok = fail = 0
         for a in actions:
             cmd = a.get("cmd")
             if cmd == "ACTION_PLAY":
                 aid = a.get("id")
                 hold = a.get("duration_ms", 0)   # LLM 给的保持时长,0 = 无限保持
-                self.dog.action(aid, hold)
+                if self.dog.action(aid, hold):
+                    ok += 1
+                else:
+                    fail += 1
+                    print(f"[worker] ⚠ ACTION_PLAY #{aid} 发送失败: {self.dog.last_cmd_error}", flush=True)
                 print(f"[worker] stm32 → ACTION_PLAY #{aid} hold={hold}ms", flush=True)
                 # M3 fix: 等 ramp(+hold)跑完再发下一条,避免被立刻 cancel
                 wait_ms = self.RAMP_WAIT_MS.get(aid, 1000)
@@ -154,14 +163,26 @@ class KWSWorker:
             elif cmd == "MOTION_PLAY":
                 mid = a.get("id")
                 dur = a.get("duration_ms", 5000)
-                self.dog.motion(mid, dur)
+                if self.dog.motion(mid, dur):
+                    ok += 1
+                else:
+                    fail += 1
+                    print(f"[worker] ⚠ MOTION_PLAY #{mid} 发送失败: {self.dog.last_cmd_error}", flush=True)
                 print(f"[worker] stm32 → MOTION_PLAY #{mid} dur={dur}ms", flush=True)
                 # MOTION_PLAY 不插 sleep,它的 duration_ms 由 STM32 tick 自动结束
             elif cmd == "EMERGENCY_STOP":
-                self.dog.emergency_stop()
+                if self.dog.emergency_stop():
+                    ok += 1
+                else:
+                    fail += 1
+                    # 安全关键:急停失败必须显式喊出来
+                    print(f"[worker] ⚠⚠ EMERGENCY_STOP 发送失败: {self.dog.last_cmd_error}", flush=True)
                 print(f"[worker] stm32 → EMERGENCY_STOP", flush=True)
             else:
                 print(f"[worker] 跳过非法 action: {a}", flush=True)
+        if fail:
+            print(f"[worker] 本批 {len(actions)} 条:成功 {ok},失败 {fail}", flush=True)
+        return ok, fail
 
     # === WS brain 上送 ===
     async def send_to_brain(self, pcm: bytes) -> dict | None:

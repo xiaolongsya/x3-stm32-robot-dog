@@ -153,8 +153,14 @@ static void dispatch_frame(const uint8_t *f, uint8_t total_len) {
     return;
   }
 
-  /* 2026-09-15:收到合法帧立刻回 "OK\n" 给 X3 监听脚本看(诊断用) */
+  /* 2026-09-15:收到合法帧立刻回 "OK\n" 给 X3 监听脚本看(诊断用)
+   * 2026-09-17 修 L2:默认关闭 —— 每帧多 3 字节 + 一次阻塞 HAL_UART_Transmit,
+   *   X3 端 read_ack 靠帧头 0xAA55 定位,本来也不依赖这段文本。
+   *   调试时在 CubeIDE 的 Preprocessor 里定义 COMMANDS_DEBUG_ACK_TEXT 即可恢复。
+   */
+#ifdef COMMANDS_DEBUG_ACK_TEXT
   HAL_UART_Transmit(&huart1, (uint8_t*)"OK\n", 3, 100);
+#endif
 
   const uint8_t *d = f + 4;
   switch (cmd) {

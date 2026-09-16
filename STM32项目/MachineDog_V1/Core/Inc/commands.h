@@ -26,11 +26,14 @@
   *                       2026-09-16 作废,X3 不发,STM32 收到回 BAD_CMD(2)
   *   0x08 ~~BUZZER_OFF~~  data: ~~[]  (立即停蜂鸣器)~~
   *                       2026-09-16 作废,同上
-  *   0x09 ACTION_PLAY    data: [action_id u8, repeat u8, params...]
+  *   0x09 ACTION_PLAY    data: [action_id u8, repeat u8, hold_ms u16 LE]
   *                       action_id: 5=SIT_DOWN 6=STAND_UP 7=SIT_TO_STAND 8=STAND_TO_SIT
   *                                  (1..4 走 MOTION_PLAY 命令,本命令不处理)
-  *                       repeat:     重复次数 (1=单次, >1 循环执行)
-  *                       params:     后续参数(预留, 当前实现忽略)
+  *                       repeat:     忽略(由 X3 端循环调用实现)
+  *                       hold_ms:    ramp 完成后保持时长,2026-09-17 加
+  *                                   = 0 → 保持终点姿态不回 STAND
+  *                                   > 0 → 保持 hold_ms 后渐进回 STAND
+  *                                   (旧格式 len==2 无此字段,按 0 处理)
   *
   * 默认动作:MOTION_STAND(上电后什么都不动,X3 不发命令狗也不会自己跑)
   *
@@ -48,7 +51,21 @@ extern "C" {
 
 #include <stdint.h>
 
-/* 接收缓冲(USART1 DMA + IDLE,够长以防一帧数据多) */
+/* 接收缓冲(USART1 DMA + IDLE,够长以防一帧数据多)
+ *
+ * ⚠️ 约束(2026-09-17 核查 L3,记录在案):
+ *   接收用 HAL_UARTEx_ReceiveToIdle_DMA + DMA_NORMAL(不是 CIRCULAR),
+ *   且 HAL_UARTEx_RxEventCallback 里 HAL_UART_DMAStop() 关掉自动重启,
+ *   由 commands_poll() 处理完再显式重启。
+ *
+ *   含义:两次 poll 之间 DMA 是停的,这一窗口内到达的字节不会被收。
+ *   当前**安全** —— X3 端 dog_uart.cmd() 是 send+等 ACK 串行,每帧 5~10 字节,
+ *   两帧间隔远大于主循环周期,不会溢出 64 字节。
+ *
+ *   若将来改成"一次 burst 发 N 帧不等 ACK":N 帧字节数会超过 64,
+ *   且 DMA 重启前到达的字节会丢 → 必须同步改成 DMA_CIRCULAR +
+ *   commands_poll() 追读差量。**改 burst 前先改这里**,否则会静默丢帧。
+ */
 #define COMMANDS_RX_BUF_SIZE   64
 
 void     commands_init(void);

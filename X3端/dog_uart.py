@@ -73,8 +73,13 @@ def build_frame(cmd: int, payload: bytes = b"") -> bytes:
 class DogLink:
     def __init__(self, port=DEFAULT_PORT, baud=DEFAULT_BAUD, heartbeat=True):
         self.ser = serial.Serial(port, baud, timeout=0.5)
+        # 2026-09-17 修 M1:心跳线程与主线程共用 self.ser,write 不是线程安全的。
+        # 两帧几乎同时写会导致字节交错 → STM32 看到错位帧头 → CRC_ERR。
+        # 所有 ser.write 走这把锁(pyserial 的 write 内部不保证原子)。
+        self._tx_lock = threading.Lock()
         self._hb_stop = threading.Event()
         self._hb_thread = None
+        self.last_cmd_error = None   # 最近一次 cmd 失败原因(None=成功)2026-09-17 加
         if heartbeat:
             self._hb_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
             self._hb_thread.start()
@@ -84,7 +89,8 @@ class DogLink:
         frame = build_frame(CMD_HEARTBEAT)
         while not self._hb_stop.is_set():
             try:
-                self.ser.write(frame)
+                with self._tx_lock:
+                    self.ser.write(frame)
             except Exception:
                 pass
             self._hb_stop.wait(0.1)
@@ -97,8 +103,9 @@ class DogLink:
 
     # === 底层收发 ===
     def send_raw(self, data: bytes):
-        self.ser.write(data)
-        self.ser.flush()
+        with self._tx_lock:
+            self.ser.write(data)
+            self.ser.flush()
 
     def read_ack(self, cmd: int, timeout=0.5):
         """读 ACK(容忍 STM32 夹发的 'OK\\n' 诊断文本)。返回 (status, data) 或 None"""
@@ -130,17 +137,28 @@ class DogLink:
             time.sleep(0.01)
         return None
 
-    def cmd(self, cmd_id: int, payload: bytes = b"", timeout=0.5):
-        """发一帧 + 等 ACK。返回 True/False"""
-        self.send_raw(build_frame(cmd_id, payload))
-        r = self.read_ack(cmd_id, timeout)
-        if r is None:
-            print(f"  ✗ cmd 0x{cmd_id:02X} 无 ACK")
-            return False
-        status, _ = r
-        name = STATUS_NAMES.get(status, f"?{status}")
-        print(f"  {'✓' if status == 0 else '✗'} cmd 0x{cmd_id:02X} → {name}")
-        return status == 0
+    def cmd(self, cmd_id: int, payload: bytes = b"", timeout=0.5, retries=1):
+        """发一帧 + 等 ACK。返回 True/False
+
+        2026-09-17 修 M2:原先无 ACK 就静默丢,现在默认重试 1 次。
+        重试对现有命令是安全的 —— 都是"设到某个姿态"的幂等操作
+        (ACTION_PLAY 重发 = 再 ramp 到同一目标;EMERGENCY_STOP 重发无副作用)。
+        最坏代价:真断线时多花 timeout×retries 秒。
+        """
+        for attempt in range(retries + 1):
+            self.send_raw(build_frame(cmd_id, payload))
+            r = self.read_ack(cmd_id, timeout)
+            if r is not None:
+                status, _ = r
+                name = STATUS_NAMES.get(status, f"?{status}")
+                print(f"  {'✓' if status == 0 else '✗'} cmd 0x{cmd_id:02X} → {name}")
+                self.last_cmd_error = None if status == 0 else name
+                return status == 0
+            if attempt < retries:
+                print(f"  ↻ cmd 0x{cmd_id:02X} 无 ACK,重试 {attempt + 1}/{retries}")
+        print(f"  ✗ cmd 0x{cmd_id:02X} 无 ACK(已重试 {retries} 次)")
+        self.last_cmd_error = "NO_ACK"
+        return False
 
     # === 高层动作 ===
     def action(self, action_id: int, hold_ms: int = 0):
