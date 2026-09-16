@@ -4,17 +4,21 @@
   * @file    stepping.c
   * @brief   机器狗 v1 原地踏步(2026-09-14 整理)
   *
-  * 算法(2026-09-14 最新版):
+  * 算法(2026-09-17 最新版):
   *   对角 trot:phase < 0.5 一对 swing,phase >= 0.5 另一对 swing
   *   swing 腿:shin + thigh 用同一个三角波同步动作
   *     shin_offset  = triangle × STEP_TROT_OFFSET
   *     thigh_offset = shin_offset × STEP_RATIO_SHIN_TO_THIGH_X10 / 10
-  *   support 腿:保持 TROT_STAND(中立位)
+  *   **swing 和 support 都用 TROT_STAND 作基准**(2026-09-17 统一)
+ *     swing 腿:TROT_STAND ± offset;support 腿:保持 TROT_STAND
   *
   * 抬腿模型(机械反装镜像):
   *   - 抬腿 = 小腿向狗头方向倾斜 = 右腿 PWM 减 + 左腿 PWM 增
   *   - 三角波 ramp(0→peak→0),峰值在 phase=0.5
-  *   - 第一帧(phase=0)全 STAND(无跳变)
+  *   - 第一帧(phase=0)8 路全 TROT_STAND(无跳变)
+ *   - 相位边界三角波归零,且 swing/support 基准相同 → 切换无跳变
+ *     (2026-09-17 修:此前 swing 用 SERVO_STEP.stand、support 用 trot_stand_pwm,
+ *      基准不同导致 BR/BL 小腿每个相位边界突跳 100µs)
   *
   * 参数(2026-09-14 用户拍板,可调):
   *   STEP_TROT_OFFSET      单腿摆幅(PWM,默认 500)
@@ -226,11 +230,23 @@ static void stepping_trot_step(void) {
     }
 
     if (swing_mask & (1u << id)) {
-      /* Swing 腿:右腿 P 减(收),左腿 P 增(收) */
+      /* Swing 腿:右腿 P 减(向狗头方向倾斜/抬腿),左腿 P 增(镜像)
+       *
+       * 2026-09-17 修:基准从 SERVO_STEP[id].stand( STAND 值)改成
+       *   trot_stand_pwm[id](TROT 中立值)—— 与 support 分支统一。
+       *
+       * 修前问题:swing 用 STAND、support 用 TROT_STAND,两者不相等,
+       *   而三角波在相位边界归零 → 每次 swing↔support 切换都突跳
+       *   |STAND − TROT_STAND|:BR 小腿 100µs、BL 小腿 100µs,每踏一步抖两下。
+       *   统一基准后跳变数学上归零(boundary 两侧都是 trot_stand_pwm[id])。
+       *
+       * 附带好处:BR 小腿的 STAND=1600 是"前倾"值,原先 swing 绕它摆动会
+       *   带着前倾分量;改用中立 1500 后与 support 一致,不再抖动。
+       */
       if (SERVO_STEP[id].is_right) {
-        pwm = (int16_t)SERVO_STEP[id].stand - this_offset;
+        pwm = (int16_t)trot_stand_pwm[id] - this_offset;
       } else {
-        pwm = (int16_t)SERVO_STEP[id].stand + this_offset;
+        pwm = (int16_t)trot_stand_pwm[id] + this_offset;
       }
     } else {
       /* Support 腿:保持 TROT_STAND(中立位) */
