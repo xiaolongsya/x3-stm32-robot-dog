@@ -49,15 +49,15 @@ static void apply_sit_neutral(void) {
  *   - 旧代码 SIT_REAL_PWM[7]=1980 但 SERVO_LIMIT[7]=[1430,1730] 宽度只有 300
  *     → 1980 被 clamp 到 1730, BL 只走 150/500 (30%) 所以蹲下"瞬间到位"
  *   - 新 STAND=1480, SERVO_LIMIT=[1480,2180], target=1980 → +500 与其他小腿一致
- * 4 小腿向"腿收"方向偏移 + 4 肩保持 STAND
+ * 4 小腿向狗头方向倾斜(身体降低,蹲下) + 4 肩保持 STAND
  * 全部从 SERVO_*_STAND 派生,在 SERVO_LIMIT 范围内
  *
- * 腿"收"方向 (PWM 偏移 ±500,左右舵机镜像):
- *   - BR shin: STAND=1600, 收=1100 (P 减,右腿)
- *   - FR shin: STAND=1600, 收=1100 (P 减,右腿)
- *   - FL shin: STAND=1400, 收=1900 (P 增,左腿镜像)
- *   - BL shin: STAND=1480, 收=1980 (P 增,左腿镜像,2026-09-16 改)
- * 4 肩保持 STAND 不动
+ * 小腿向狗头方向倾斜(身体降低)(PWM 偏移 ±500,左右舵机反装镜像):
+ *   - BR shin: STAND=1600, 蹲=1100 (P 减,右小腿"减小=向前")
+ *   - FR shin: STAND=1600, 蹲=1100 (P 减,右小腿)
+ *   - FL shin: STAND=1400, 蹲=1900 (P 增,左小腿"增大=向前")
+ *   - BL shin: STAND=1480, 蹲=1980 (P 增,左小腿,2026-09-16 改)
+ * 4 肩保持 STAND 不动(几何上只小腿变短,肩不动)
  */
 static const uint16_t SIT_REAL_PWM[8] = {
   1100,                          /* 0  BR shin:1600 → 1100(P 减,收 500) */
@@ -245,7 +245,7 @@ void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
   }
   if (next == NULL) return;
 
-  /* 停掉 stepping(切动作前先收腿,避免硬切) */
+  /* 停掉 stepping(切动作前先停步态,避免硬切) */
   /* 注意:在 isr-context 不能调,但 motion_play_by_id 来自 main loop / 命令处理,安全 */
   stepping_stop();
 

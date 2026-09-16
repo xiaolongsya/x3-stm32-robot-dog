@@ -5,7 +5,7 @@
   * @brief   机器狗 v1 原地踏步接口(2026-09-14 整理)
   *
   * 算法:对角 trot(2026-09-14 最新版)
-  *   - 收腿模型:抬腿 = 收腿 = 右腿 PWM 减 + 左腿 PWM 增
+  *   - 抬腿模型:小腿向狗头方向倾斜 = 右腿 PWM 减 + 左腿 PWM 增
   *   - 三角波 ramp(0→peak→0),shin + thigh 同步动作
   *   - swing 腿抬 offset,support 腿保持 TROT_STAND
   *   - ISR 不 printf(避免阻塞 UART)
@@ -27,13 +27,16 @@
   *   trot:phase < 0.5 腿 1+3 swing,腿 2+4 support(对角交替)
   *
   * STAND 含义:
-  *   - 1500 = 舵机中位 = 大腿垂直 + 小腿水平(几何最高)
+  *   - 1500 = 舵机中位 = 大腿垂直 + 小腿水平(直角,部件极值位)
   *   - STAND = 4 脚贴地的实测姿态,作步态参考基线
   *
-  * 收腿定义:
-  *   - 抬腿本质 = 收腿 = 身体降低方向
-  *   - 大腿后旋 + 小腿后旋(脚相对身体往上,身体不动或微沉)
-  *   - 右腿 PWM 减,左腿 PWM 增(左右舵机反向安装)
+  * 抬腿定义(2026-09-16 用户拍板):
+  *   - 抬腿本质 = 小腿向狗头方向倾斜(脚从地面腾空)
+  *   - 大腿不动(保持 STAND),只小腿动
+  *   - PWM 方向(见 ~/.claude/memory/machine-dog-v1-mechanical.md 的统一规则):
+  *     - 右小腿 PWM 减 = 向狗头方向倾斜
+  *     - 左小腿 PWM 增 = 向狗头方向倾斜
+  *   - 左右舵机反装镜像(机械装配决定 PWM 方向相反)
   *
   * 详细参数(在 stepping.c 里):
   *   - STEP_TROT_OFFSET,STEP_TROT_PERIOD,STEP_RATIO_SHIN_TO_THIGH_X10
@@ -54,7 +57,7 @@
 /* === 8 路舵机表(2026-09-14 提到 .h,供 motions.c 也可见)=========== */
 typedef struct {
   uint16_t stand;      /* STAND PWM */
-  uint8_t  is_right;   /* 1=右腿 (PWM 减 = 收腿),0=左腿 (PWM 增 = 收腿) */
+  uint8_t  is_right;   /* 1=右腿 (PWM 减 = 向狗头方向倾斜),0=左腿 (PWM 增 = 向狗头方向倾斜) */
   uint16_t min;        /* SERVO_LIMIT 下限 */
   uint16_t max;        /* SERVO_LIMIT 上限 */
 } ServoStep;
