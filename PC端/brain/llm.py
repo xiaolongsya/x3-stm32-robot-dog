@@ -58,8 +58,9 @@ class LLMClient:
                     ],
                     "stream": False,
                     "think": False,            # 关 Qwen3 thinking (原生 API)
+                    "format": ACTION_SCHEMA,    # 强制 schema 输出(原生 API 用 format 字段)
                     "options": {
-                        "temperature": 0.3,
+                        "temperature": 0.1,
                         "num_predict": 300,
                     },
                 }
@@ -97,8 +98,8 @@ class LLMClient:
         if errors:
             log.warn(f"LLM action errors: {errors}")
         truncated = False
-        if len(valid) > 8:
-            valid = valid[:8]
+        if len(valid) > 16:
+            valid = valid[:16]
             truncated = True
 
         if not reply:
