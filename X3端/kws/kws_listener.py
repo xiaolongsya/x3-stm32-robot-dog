@@ -172,7 +172,15 @@ class KWSListener:
                     preds = self.oww.predict(pcm)
                     if not preds:
                         continue
-                    score = float(next(iter(preds.values()))[-1])
+                    s = next(iter(preds.values()))
+                    # openwakeword 版本不同可能返回 ndarray 或 float
+                    if isinstance(s, (np.ndarray, list)):
+                        try:
+                            score = float(s[-1])
+                        except (TypeError, IndexError):
+                            continue
+                    else:
+                        score = float(s)
                     if score < self.threshold:
                         continue
 
