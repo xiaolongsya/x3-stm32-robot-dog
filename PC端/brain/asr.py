@@ -16,13 +16,13 @@ class ASRClient:
 
         log.info("Loading SenseVoiceSmall ...")
         t0 = time.time()
-        # SenseVoiceSmall 支持 FP16 推理;FunASR 通过 quantize 参数控制
-        # device=cuda:0 时,模型默认 FP32;手动 fp16 用 torch_dtype
+        # SenseVoiceSmall 支持 FP16/INT8;funasr 用 quantize=True (INT8)
+        # FP32 ~1.5GB → INT8 ~400MB,质量几乎不损(< 1%)
         self.model = AutoModel(
             model="iic/SenseVoiceSmall",
             device=device,
             disable_update=True,
-            # funasr 1.2+ 支持 torch_dtype / quantize;这里按默认 FP32 跑(显存够)
+            quantize=True,
         )
         log.info(f"SenseVoiceSmall loaded {int((time.time() - t0) * 1000)}ms")
 
