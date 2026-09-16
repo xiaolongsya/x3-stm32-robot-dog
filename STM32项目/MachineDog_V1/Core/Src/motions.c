@@ -108,6 +108,28 @@ static const Motion *current = NULL;
  */
 static uint16_t g_duration_override_s = 0;
 
+/* === ACTION_PLAY hold 状态(2026-09-17 加)===
+ * 语义(ACTION_PLAY id 5..8 的 hold_ms):
+ *   - hold_ms = 0 → ramp 完成后保持终点姿态(现状,不回 STAND)
+ *   - hold_ms > 0 → ramp 完成后保持 hold_ms,再渐进回 STAND
+ *
+ * 用途:"蹲下3秒" = 坐下(ramp 800ms)→ 保持 3s → 自动回 STAND
+ * 实现在文件尾部的 motion_play_action() / motion_hold_tick()
+ */
+static uint32_t g_action_hold_ms    = 0;
+static uint32_t g_action_hold_start = 0;
+static uint8_t  g_action_holding    = 0;
+static void     motion_hold_tick(void);   /* 前向声明:motion_poll() 要调 */
+
+/* 清 hold 状态 — 任何切动作前必须调
+ * 反例:hold 期间收到 MOTION_PLAY(trot)/EMERGENCY_STOP,若不清理,
+ *       old hold 到点会凭空插一个"回 STAND"的 ramp 打断新动作
+ */
+static void motion_hold_reset(void) {
+  g_action_holding = 0;
+  g_action_hold_ms = 0;
+}
+
 /* === 各动作 setup() ================================================*/
 
 /* STAND:跳到 STAND(用户标定的站立姿态,4 脚承重),保持不动
@@ -264,6 +286,12 @@ void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
    */
   ramp_cancel();
 
+  /* 清 ACTION_PLAY 的 hold 残留(2026-09-17)
+   * 本函数被 commands.c 的 MOTION_PLAY(0x01)/ EMERGENCY_STOP(0x06) 直接调用,
+   * 绕过了 motion_play_action() 的 hold 清理 —— 不补这一行的话,
+   * hold 期间收到踏步/急停后,旧 hold 到点会凭空插一个"回 STAND"的 ramp */
+  motion_hold_reset();
+
   /* 切到新动作 */
   current = next;
   /* 覆盖 duration(2026-09-16 修复)
@@ -315,48 +343,88 @@ void motion_poll(void) {
   /* 1) ramp 推进(任意动作下都可能活跃) */
   ramp_tick();
 
+  /* 2) ACTION_PLAY hold 到期检查(2026-09-17):
+   *    hold 到期 → 渐进回 STAND。不依赖 current,所以放在 tick 派发前 */
+  motion_hold_tick();
+
   if (current == NULL || current->tick == NULL) return;
   current->tick();
 }
 
-/* === ACTION_PLAY 入口 (2026-09-16 加)===
- * id 1..4: 走 motion_play_by_id()(既有动作)
+/* === ACTION_PLAY 入口 (2026-09-16 加 / 2026-09-17 加 hold)===
+ * id 1..4: 走 motion_play_by_id()(既有动作),hold_ms 当动作时长传下去
  * id 5..8: ramp 动作(SIT_DOWN / STAND_UP / SIT_TO_STAND / STAND_TO_SIT)
  *
- * duration_ms 语义:
- *   = 0  → 用 SIT_RAMP_MS 默认 800ms
- *   > 0  → 用入参作为 ramp 时长(典型 500~1500ms)
+ * hold_ms 语义(仅 id 5..8):
+ *   = 0  → ramp 完成后保持终点姿态,不回 STAND(现状行为)
+ *   > 0  → ramp 完成后保持 hold_ms,再渐进回 STAND
+ * 注:ramp 本身时长固定(SIT 800ms / STAND 1200ms),不受 hold_ms 影响
  *
  * 实现:任何 ramp 启动前先 stepping_stop() 防止相位错位
  */
 #define SIT_RAMP_MS  800u
 #define STAND_RAMP_MS 1200u  // 站起慢一点，更平滑
 
-/* ramp 完成回调:清状态(状态机视角的 ACT_IDLE 由 current==NULL 表达) */
+/* ramp 完成回调
+ * - 有 hold:第一次完成 → 进 hold(保持姿态,不清 current)
+ * - 无 hold / hold 结束后的"回 STAND"ramp 完成 → 清状态(ACT_IDLE)
+ */
 static void on_ramp_complete_idle(void) {
-  /* ramp 完成后清 current(状态机进入 ACT_IDLE) */
+  if (g_action_hold_ms > 0u && !g_action_holding) {
+    /* 第一次 ramp 完成 → 进入 hold 保持态 */
+    g_action_holding    = 1;
+    g_action_hold_start = HAL_GetTick();
+    return;   /* 不清 current,保持终点姿态 */
+  }
+  /* 无 hold,或 hold 结束后的回 STAND ramp 完成 */
+  g_action_holding = 0;
+  g_action_hold_ms = 0;
   current = NULL;
   phase   = MOTION_PHASE_DONE;
 }
 
-void motion_play_action(uint8_t id, uint32_t duration_ms) {
+/* hold 到期 → 渐进回 STAND(由 motion_poll 每帧调)
+ * 注意:回 STAND 也用 ramp_sit_to_target,完成后走 on_ramp_complete_idle 的
+ *       "清状态"分支(g_action_hold_ms 已置 0)
+ */
+static void motion_hold_tick(void) {
+  if (!g_action_holding) return;
+  if ((HAL_GetTick() - g_action_hold_start) < g_action_hold_ms) return;
+
+  g_action_holding = 0;
+  g_action_hold_ms = 0;   /* 清掉,让回 STAND 的 ramp 完成走清状态分支 */
+
+  uint16_t stand_pwm[8];
+  for (uint8_t i = 0; i < 8; i++) stand_pwm[i] = SERVO_STEP[i].stand;
+  ramp_sit_to_target(stand_pwm, STAND_RAMP_MS, on_ramp_complete_idle);
+}
+
+void motion_play_action(uint8_t id, uint32_t hold_ms) {
   /* 任何 ramp 启动前先停 stepping */
   stepping_stop();
 
+  /* 清上一次的 hold 残留 */
+  motion_hold_reset();
+
   if (id <= 4) {
-    /* 既有动作:STAND/TROT/BOB/SHIN_TEST */
-    motion_play_by_id(id, duration_ms);
+    /* 既有动作:STAND/TROT/BOB/SHIN_TEST(hold_ms 当动作时长,语义不变) */
+    motion_play_by_id(id, hold_ms);
     return;
   }
   if (id < 5 || id > 8) return;
 
-  uint32_t ms = (duration_ms > 0) ? duration_ms : SIT_RAMP_MS;
+  /* ramp 类动作不在 MOTION_TABLE 里,清掉 current 防止上一个 motion 的 tick
+   * 继续跑(例如 TROT 的 start_delay 到点会启动 stepping,打断 ramp) */
+  current = NULL;
+  phase   = MOTION_PHASE_RUN;
+
+  g_action_hold_ms = hold_ms;
 
   switch (id) {
     case ACTION_SIT_DOWN:       /* 5: 任意 → SIT_REAL */
     case ACTION_STAND_TO_SIT:   /* 8: 别名 */
       ramp_cancel();
-      ramp_sit_to_target(SIT_REAL_PWM, ms, on_ramp_complete_idle);
+      ramp_sit_to_target(SIT_REAL_PWM, SIT_RAMP_MS, on_ramp_complete_idle);
       break;
     case ACTION_STAND_UP:       /* 6: 任意 → STAND */
     case ACTION_SIT_TO_STAND:   /* 7: 别名 */
@@ -364,9 +432,7 @@ void motion_play_action(uint8_t id, uint32_t duration_ms) {
       ramp_cancel();
       uint16_t stand_pwm[8];
       for (uint8_t i = 0; i < 8; i++) stand_pwm[i] = SERVO_STEP[i].stand;
-      /* stand 动作专用 ramp 时间，覆盖默认的 ms */
-      uint32_t stand_ms = (duration_ms > 0) ? duration_ms : STAND_RAMP_MS;
-      ramp_sit_to_target(stand_pwm, stand_ms, on_ramp_complete_idle);
+      ramp_sit_to_target(stand_pwm, STAND_RAMP_MS, on_ramp_complete_idle);
       break;
     }
     default:

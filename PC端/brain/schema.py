@@ -66,7 +66,12 @@ def validate_actions(raw_actions):
             if id_ not in (5, 6, 7, 8):
                 errors.append(f"ACTION_PLAY id={id_} 越界(需 5..8)")
                 continue
-            valid.append({"cmd": cmd, "id": int(id_)})
+            # duration_ms = ramp 完成后保持时长(0 = 无限保持,不回 STAND)
+            # 2026-09-17 修:此前该字段被整条丢弃,LLM 发"蹲下3秒"等于"蹲下"
+            hold = a.get("duration_ms", 0)
+            if not isinstance(hold, int) or hold < 0 or hold > 60000:
+                hold = 0  # 兜底:非法值当"无限保持"
+            valid.append({"cmd": cmd, "id": int(id_), "duration_ms": int(hold)})
         elif cmd == "MOTION_PLAY":
             id_ = a.get("id")
             if id_ not in (1, 2, 3, 4):

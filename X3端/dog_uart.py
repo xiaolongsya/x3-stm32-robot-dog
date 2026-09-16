@@ -43,12 +43,16 @@ CMD_ACTION_PLAY     = 0x09
 
 # === ACTION_PLAY 动作 id(motions.c 2026-09-16) ===
 ACTION_SIT_DOWN     = 5   # 任意 → 真实蹲姿(渐进 800ms)
-ACTION_STAND_UP     = 6   # 任意 → STAND(渐进 800ms)
+ACTION_STAND_UP     = 6   # 任意 → STAND(渐进 1200ms)
 ACTION_SIT_TO_STAND = 7   # = STAND_UP 别名
 ACTION_STAND_TO_SIT = 8   # = SIT_DOWN 别名
 
+# STM32 motions.c 的 ramp 固定时长(SIT_RAMP_MS / STAND_RAMP_MS)
+# 发完动作后至少等这么久,才能发下一个(否则 STM32 会 ramp_cancel 掉上一个)
+ACTION_RAMP_MS = {5: 800, 6: 1200, 7: 1200, 8: 800}
+
 STATUS_NAMES = {0: "OK", 1: "CRC_ERR", 2: "BAD_CMD", 3: "BAD_PARAM", 4: "BAD_LEN"}
-RAMP_MS = 800   # STM32 端固定 ramp 时长,动作后至少等这么久
+RAMP_MS = 800   # 兼容旧代码(SIT 默认);新代码用 ACTION_RAMP_MS[aid]
 
 ACK  = 0x80
 HEAD = b"\xaa\x55"
@@ -139,9 +143,17 @@ class DogLink:
         return status == 0
 
     # === 高层动作 ===
-    def action(self, action_id: int, dur_ms=0):
-        """ACTION_PLAY 0x09: [action_id u8, repeat u8]"""
-        return self.cmd(CMD_ACTION_PLAY, bytes([action_id, 1]))
+    def action(self, action_id: int, hold_ms: int = 0):
+        """ACTION_PLAY 0x09: [action_id u8, repeat u8, hold_ms u16 LE]
+
+        hold_ms(仅 id 5..8 有效,2026-09-17 加):
+          = 0 → ramp 完成后保持终点姿态(不回 STAND)
+          > 0 → ramp 完成后保持 hold_ms,再渐进回 STAND
+
+        固定发 4 字节负载;旧固件只读前 2 字节,多出的会被忽略(向后兼容)。
+        """
+        payload = bytes([action_id, 1]) + struct.pack("<H", min(int(hold_ms), 65535))
+        return self.cmd(CMD_ACTION_PLAY, payload)
 
     def motion(self, motion_id: int, duration_ms: int):
         """MOTION_PLAY 0x01: [id u8, dur u32 LE]"""
@@ -160,10 +172,10 @@ class DogLink:
             print(f"--- squat {i + 1}/{times} ---")
             if not self.sit():
                 return False
-            time.sleep(RAMP_MS / 1000.0 + hold_s)
+            time.sleep(ACTION_RAMP_MS[ACTION_SIT_DOWN] / 1000.0 + hold_s)
             if not self.stand():
                 return False
-            time.sleep(RAMP_MS / 1000.0 + hold_s)
+            time.sleep(ACTION_RAMP_MS[ACTION_STAND_UP] / 1000.0 + hold_s)
         return True
 
     def trot(self, seconds=10.0):

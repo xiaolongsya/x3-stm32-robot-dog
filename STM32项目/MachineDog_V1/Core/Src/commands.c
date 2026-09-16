@@ -200,23 +200,27 @@ static void dispatch_frame(const uint8_t *f, uint8_t total_len) {
       break;
     }
     /* 2026-09-16:0x07/0x08 蜂鸣器命令作废,代码移除 */
-    case 0x09: {  /* ACTION_PLAY: [action_id u8, repeat u8, params...]
+    case 0x09: {  /* ACTION_PLAY: [action_id u8, repeat u8, hold_ms u16 LE]
                   * action_id: 5=SIT_DOWN 6=STAND_UP 7=SIT_TO_STAND 8=STAND_TO_SIT
-                  * repeat:     重复次数 (1=单次, >1 循环)
-                  * params:     后续参数(预留, 忽略)
+                  * repeat:     忽略(协议层不实现,由 X3 端循环调用)
+                  * hold_ms:    ramp 完成后保持时长(2026-09-17 加)
+                  *             0 = 无限保持(不回 STAND);>0 = 保持后渐进回 STAND
+                  *             旧格式(len==2)无此字段,按 0 处理
                   */
       if (len < 2) { commands_send_ack(cmd, 3, NULL, 0); return; }
       uint8_t action_id = d[0];
       uint8_t repeat    = d[1];
+      uint16_t hold_ms  = 0;
+      if (len >= 4) {
+        hold_ms = (uint16_t)d[2] | ((uint16_t)d[3] << 8);
+      }
       if (action_id < 1 || action_id > 8) {
         commands_send_ack(cmd, 3, NULL, 0);
         return;
       }
       if (repeat < 1) repeat = 1;
-      /* 协议层不实现 repeat, 由 X3 端循环调用实现
-       * 收到一次就执行一次(渐进 ramp 在 STM32 端跑完) */
       (void)repeat;
-      motion_play_action(action_id, 0);
+      motion_play_action(action_id, hold_ms);
       commands_send_ack(cmd, 0, NULL, 0);
       watchdog_reset();
       break;

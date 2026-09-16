@@ -127,13 +127,13 @@ class KWSWorker:
     #   - MOTION_PLAY (id=1..4): 时长不等,默认 30s/无限
     #   - EMERGENCY_STOP: 瞬间
     #
-    # 实际我们不等 STM32 跑完完整 ramp,只插一段"最小可视时长"避免立刻被下一条覆盖
-    # 这样 6 条 [蹲立蹲立蹲立] ≈ 6 × 1s ≈ 6s 完成,有明显节奏
-    RAMP_MIN_HOLD_MS = {
-        # ACTION_PLAY id → 最小 hold ms(SIT_RAMP_MS 或 STAND_RAMP_MS)
-        5: 1000,   # SIT_DOWN 800ms + 留 200ms 视觉停留
-        6: 1400,   # STAND_UP 1200ms + 200ms
-        7: 1400,   # SIT_TO_STAND 同 STAND_UP
+    # 等 STM32 跑完 ramp 再发下一条;若带 hold,还要额外等 hold 时长
+    # (hold > 0 时 STM32 会在 ramp 完成后保持 hold,再自动渐进回 STAND)
+    RAMP_WAIT_MS = {
+        # ACTION_PLAY id → ramp 时长 + 视觉余量
+        5: 1000,   # SIT_DOWN 800ms + 200ms
+        6: 1300,   # STAND_UP 1200ms + 100ms
+        7: 1300,   # SIT_TO_STAND 同 STAND_UP
         8: 1000,   # STAND_TO_SIT 同 SIT_DOWN
     }
 
@@ -143,13 +143,14 @@ class KWSWorker:
             cmd = a.get("cmd")
             if cmd == "ACTION_PLAY":
                 aid = a.get("id")
-                dur = a.get("duration_ms", 0)
-                self.dog.action(aid, dur)
-                print(f"[worker] stm32 → ACTION_PLAY #{aid} dur={dur}ms", flush=True)
-                # M3 fix: ramp 类动作之间 sleep 等 STM32 跑完,避免下一条立刻覆盖
-                hold_ms = self.RAMP_MIN_HOLD_MS.get(aid, 0)
-                if hold_ms > 0:
-                    time.sleep(hold_ms / 1000.0)
+                hold = a.get("duration_ms", 0)   # LLM 给的保持时长,0 = 无限保持
+                self.dog.action(aid, hold)
+                print(f"[worker] stm32 → ACTION_PLAY #{aid} hold={hold}ms", flush=True)
+                # M3 fix: 等 ramp(+hold)跑完再发下一条,避免被立刻 cancel
+                wait_ms = self.RAMP_WAIT_MS.get(aid, 1000)
+                if hold > 0:
+                    wait_ms += hold
+                time.sleep(wait_ms / 1000.0)
             elif cmd == "MOTION_PLAY":
                 mid = a.get("id")
                 dur = a.get("duration_ms", 5000)

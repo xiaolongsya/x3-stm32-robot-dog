@@ -104,12 +104,16 @@ const char *motion_get_name(void);
  */
 void motion_play_by_id(uint8_t id, uint32_t duration_ms);
 
-/* === ACTION_PLAY 入口 (2026-09-16 加)===
- * id 1..4: 走 motion_play_by_id()(既有)
+/* === ACTION_PLAY 入口 (2026-09-16 加 / 2026-09-17 加 hold)===
+ * id 1..4: 走 motion_play_by_id()(既有动作),hold_ms 当动作时长传下去
  * id 5..8: ramp 动作(本函数处理)
- * duration_ms >0 → ramp 时长(ms);=0 → SIT_RAMP_MS 默认
+ *
+ * hold_ms(仅 id 5..8):
+ *   = 0  → ramp 完成后保持终点姿态,不回 STAND
+ *   > 0  → ramp 完成后保持 hold_ms,再渐进回 STAND
+ * ramp 本身时长固定(SIT 800ms / STAND 1200ms),不受 hold_ms 影响
  */
-void motion_play_action(uint8_t id, uint32_t duration_ms);
+void motion_play_action(uint8_t id, uint32_t hold_ms);
 
 /* === 调度接口(主循环) ===
  *
