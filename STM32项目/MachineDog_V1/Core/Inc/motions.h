@@ -38,13 +38,14 @@ extern "C" {
  *   MOTION_BOB    - 上电跳 STAND → hold 5s → 蹲下 → hold 5s → 循环
  *   MOTION_SHIN_TEST - 8 路同步线性 ramp 测小腿范围(找最大值)
  *
- * 默认 MOTION_TROT;改这里切其他动作:
- *   #define MOTION_ID  MOTION_STAND   // 只站立
- *   #define MOTION_ID  MOTION_BOB     // 蹲起循环
+ * 默认 MOTION_STAND(2026-09-14:X3 上线后上电啥都不动,等 X3 命令);
+ * 改这里切其他动作(无 X3 时调试用):
+ *   #define MOTION_ID  MOTION_TROT      // 上电就踏步
+ *   #define MOTION_ID  MOTION_BOB       // 蹲起循环
  *   #define MOTION_ID  MOTION_SHIN_TEST // 小腿测试
  */
 #ifndef MOTION_ID
-#define MOTION_ID  MOTION_TROT
+#define MOTION_ID  MOTION_STAND
 #endif
 
 #define MOTION_STAND     1
@@ -90,6 +91,12 @@ typedef struct {
 
 MotionPhase motion_get_phase(void);
 const char *motion_get_name(void);
+
+/* === 运行时切动作(X3 上线后用,2026-09-14 加)===
+ * 切换到指定 id 的动作,duration_ms=0 表示无限(等下一次切 / watchdog 切回)
+ * 实现细节:沿用 motion_init() 的状态机,但允许带运行时参数
+ */
+void motion_play_by_id(uint8_t id, uint32_t duration_ms);
 
 /* === 调度接口(主循环) ===
  *

@@ -73,8 +73,12 @@ static const Motion *current = NULL;
 
 /* === 各动作 setup() ================================================*/
 
-/* STAND:已经跳到 STAND,保持不动 */
-static void motion_stand_setup(void) { }
+/* STAND:跳到 STAND(用户标定的站立姿态,4 脚承重),保持不动
+ * 2026-09-14 修:之前 setup() 空实现,以为 motion_init() 已经写过 STAND,
+ * 实际 X3 上线后 MOTION_ID 默认 MOTION_STAND,setup 必须显式写 8 路到 STAND */
+static void motion_stand_setup(void) {
+  apply_stand();
+}
 
 /* TROT:跳到 TROT_STAND,启动 stepping 由 motion_trot_tick 在 start_delay 后触发 */
 static void motion_trot_setup(void) {
@@ -180,6 +184,53 @@ const Motion MOTION_TABLE[] = {
 /* === 对外接口 ====================================================*/
 MotionPhase motion_get_phase(void) { return phase; }
 const char *motion_get_name(void)  { return current ? current->name : "(none)"; }
+
+/* === 运行时切动作(2026-09-14 加,供 X3 UART 命令调用)===
+ *
+ * 与 motion_init() 区别:
+ *   - motion_init() 在 main() 启动时调一次,用编译时 MOTION_ID
+ *   - motion_play_by_id() 在 X3 命令时调,id 来自协议,可选 duration_ms
+ *
+ * duration_ms 含义(对 TROT/BOB):
+ *   - 0 = 无限(等下一次切或 watchdog 切回)
+ *   - >0 = 持续时长(到时 tick() 自动切 DONE,但保留最终姿态不回 STAND)
+ *
+ * 实现:复用 motion_init() 的逻辑,但允许覆盖 start_delay_s / duration_s
+ */
+void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
+  /* 找 id 对应的动作 */
+  const Motion *next = NULL;
+  for (uint8_t i = 0; MOTION_TABLE[i].name != NULL; i++) {
+    if (MOTION_TABLE[i].id == id) { next = &MOTION_TABLE[i]; break; }
+  }
+  if (next == NULL) return;
+
+  /* 停掉 stepping(切动作前先收腿,避免硬切) */
+  /* 注意:在 isr-context 不能调,但 motion_play_by_id 来自 main loop / 命令处理,安全 */
+  stepping_stop();
+
+  /* 切到新动作 */
+  current = next;
+  /* 覆盖 duration(只在调用方传入非 0 时,允许 0 表示沿用表里的值或无限)*/
+  if (duration_ms > 0) {
+    /* TROT 表里 duration_s=30 → 这里用 ms,但 Motion 字段是 uint16 s
+     * 简化:duration_ms 截断到秒,只对 TROT 有意义(其他动作 0=无限) */
+    /* 不直接改 const 表里的值,改通过 local var 走 tick */
+    /* 简化:不修改表,调用方传 0 时按表里值(BOB/SHIN_TEST 默认无限) */
+    /* duration_ms 暂不实现精确 ms 计时,留给未来 */
+  }
+
+  /* 同步状态变量 */
+  boot_tick_ms = HAL_GetTick();
+  trot_started_ms = 0;
+  bob_phase = BOB_STANDING;
+  bob_phase_start_ms = HAL_GetTick();
+  phase = MOTION_PHASE_RUN;
+
+  /* 应用初始姿态(setup) */
+  apply_sit_neutral();   /* 安全起点 */
+  if (current->setup) current->setup();
+}
 
 void motion_init(void) {
   boot_tick_ms = HAL_GetTick();

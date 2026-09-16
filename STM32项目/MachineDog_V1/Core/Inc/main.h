@@ -97,10 +97,13 @@ extern "C" {
 #define SERVO_SHOULDER_BL_STAND   1900  /* 左后肩:PB0/TIM3_CH3/servo6  ↑身体高 / ↓身体低 */
 #define SERVO_SHIN_BL_STAND       1580  /* 左后小腿:PA8/TIM1_CH1/servo7 ↑身体高 / ↓身体低 */
                                                           /* 2026-09-14:从 1480 改成 1580(+80 偏置) */
+                                                          /* 2026-09-16:按 PCB 网表 + CubeMX 配回 CH1 (PA8) */
 
 /* --- 后右腿 BR --- */
-#define SERVO_SHOULDER_BR_STAND   1100  /* 右后肩:PA3/TIM2_CH4/servo1  ↑身体高 / ↓身体低 */
-#define SERVO_SHIN_BR_STAND       1600  /* 右后小腿:PA2/TIM2_CH3/servo0 ↑身体高 / ↓身体低 */
+#define SERVO_SHOULDER_BR_STAND   1100  /* 右后肩:PA3/TIM15_CH2/servo1  ↑身体高 / ↓身体低 */
+                                                          /* 2026-09-16:从 TIM2_CH4 改成 TIM15_CH2 (CubeMX 配置) */
+#define SERVO_SHIN_BR_STAND       1600  /* 右后小腿:PA2/TIM15_CH1/servo0 ↑身体高 / ↓身体低 */
+                                                          /* 2026-09-16:从 TIM2_CH3 改成 TIM15_CH1 (CubeMX 配置) */
 /* === 标定基线(center 命令使用)== */
 #define SERVO_NEUTRAL_US   1500
 /* USER CODE END EC */
@@ -112,11 +115,9 @@ extern "C" {
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
-/* 8 路舵机 PWM 输出 — 在 USER CODE 区外,CubeMX 重生成不会清 */
-void set_servo_pulse(uint8_t id, uint16_t pulse);
 
 /* USER CODE BEGIN EFP */
-
+void set_servo_pulse(uint8_t id, uint16_t pulse);   /* 2026-09-15 防 CubeMX 重生成清 */
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

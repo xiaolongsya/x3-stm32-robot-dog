@@ -108,14 +108,8 @@ extern TIM_HandleTypeDef htim6;
  *   6   BL 肩     SERVO_SHOULDER_BL_STAND left      (700, 2300)
  *   7   BL 小腿   SERVO_SHIN_BL_STAND     left      (1430, 1730)
  */
-typedef struct {
-  uint16_t stand;      /* STAND PWM (从 SERVO_*_STAND 常量) */
-  uint8_t  is_right;   /* 1=右腿 (PWM 减 = 收腿),0=左腿 (PWM 增 = 收腿) */
-  uint16_t min;        /* SERVO_LIMIT 下限 */
-  uint16_t max;        /* SERVO_LIMIT 上限 */
-} ServoStep;
-
-static const ServoStep SERVO_STEP[8] = {
+/* stepping.h 里 typedef + extern,这里定义实体 */
+const ServoStep SERVO_STEP[8] = {
   /*0  BR 小腿 */ {SERVO_SHIN_BR_STAND,      1, 900,  1600},
   /*1  BR 肩   */ {SERVO_SHOULDER_BR_STAND,  1, 700,  2300},
   /*2  FR 小腿 */ {SERVO_SHIN_FR_STAND,      1, 900,  1600},

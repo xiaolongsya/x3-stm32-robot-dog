@@ -8,6 +8,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
 #include "i2c.h"
 #include "tim.h"
 #include "usart.h"
@@ -19,6 +20,10 @@
 #include <string.h>
 #include "stepping.h"
 #include "motions.h"
+#include "commands.h"   /* 2026-09-14 X3 协议入口 */
+#include "watchdog.h"   /* 2026-09-14 心跳超时守护 */
+#include "buzzer.h"     /* 2026-09-14 蜂鸣器 PA11 */
+#include "diagnostic.h" /* 2026-09-16 上电诊断标记 (从 main.c 搬出, 见 diagnostic.c) */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -49,8 +54,8 @@ void SystemClock_Config(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 /* 8 路舵机映射表 (servo_id 0-7):
- *  0=PA2=TIM2_CH3=servo0   4=PA6=TIM3_CH1=servo4
- *  1=PA3=TIM2_CH4=servo1   5=PA7=TIM17_CH1=servo5
+ *  0=PA2=TIM15_CH1=servo0  4=PA6=TIM3_CH1=servo4
+ *  1=PA3=TIM15_CH2=servo1  5=PA7=TIM17_CH1=servo5
  *  2=PA4=TIM3_CH2=servo2   6=PB0=TIM3_CH3=servo6
  *  3=PA5=TIM2_CH1=servo3   7=PA8=TIM1_CH1=servo7
  *
@@ -68,8 +73,8 @@ void SystemClock_Config(void);
 void set_servo_pulse(uint8_t id, uint16_t pulse) {
   if (pulse < 500 || pulse > 2500) return;
   switch (id) {
-    case 0: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, pulse); break;
-    case 1: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pulse); break;
+    case 0: __HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_1, pulse); break;
+    case 1: __HAL_TIM_SET_COMPARE(&htim15, TIM_CHANNEL_2, pulse); break;
     case 2: __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pulse); break;
     case 3: __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, pulse); break;
     case 4: __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, pulse); break;
@@ -79,88 +84,8 @@ void set_servo_pulse(uint8_t id, uint16_t pulse) {
   }
 }
 
-/* === 标定基线(2026-09-11 保留)===
- * center 命令:把全部 8 路舵机设到 SERVO_NEUTRAL_US(1500µs = 90°)
- * SERVO_NEUTRAL_US 常量已在 main.h 定义
- */
-
-/* UART 接收命令解析(2026-09-11):
- * 格式: "<servo_id> <pulse>\n"   例如 "0 1500\n"   -> 设 servo0=1500
- *       "all <pulse>\n"           设全部 8 路
- *       "center\n"                设全部 1500(居中,标定基线)
- *       "stand\n"                 站立姿态(SERVO_*_STAND 常量)
- *       "step trot"               启动原地踏步(100Hz TIM6,抬腿 10mm 保守值)
- *       "step stop"               停止踏步,回 STAND
- *       "step show"               打印当前 ham/shank/8 路 PWM
- */
-static char rx_buf[32];
-static uint8_t rx_idx = 0;
-
-static void parse_uart_command(const char *cmd) {
-  unsigned int id = 0, pulse = 0;
-  /* 用 strncmp 前置判别 "all" / "step",避免 sscanf("%u %u") 误拦截 */
-  if (strncmp(cmd, "all ", 4) == 0) {
-    if (sscanf(cmd + 4, "%u", &pulse) == 1) {
-      if (pulse >= 500 && pulse <= 2500) {
-        for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, (uint16_t)pulse);
-        printf("OK all=%u\n", pulse);
-      } else {
-        printf("ERR pulse range\n");
-      }
-    } else {
-      printf("ERR fmt\n");
-    }
-  } else if (strcmp(cmd, "step trot") == 0) {
-    stepping_start_trot();
-  } else if (strcmp(cmd, "step stop") == 0) {
-    stepping_stop();
-  } else if (strcmp(cmd, "step show") == 0) {
-    stepping_show();
-  } else if (sscanf(cmd, "%u %u", &id, &pulse) == 2) {
-    if (id <= 7) {
-      set_servo_pulse((uint8_t)id, (uint16_t)pulse);
-      printf("OK s%u=%u\n", id, pulse);
-    } else {
-      printf("ERR id>7\n");
-    }
-  } else if (strcmp(cmd, "center") == 0) {
-    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
-    printf("OK center\n");
-  } else if (strcmp(cmd, "stand") == 0) {
-    /* 站立姿态:从 SERVO_*_STAND 常量直接读取 */
-    set_servo_pulse(0, SERVO_SHIN_BR_STAND);
-    set_servo_pulse(1, SERVO_SHOULDER_BR_STAND);
-    set_servo_pulse(2, SERVO_SHIN_FR_STAND);
-    set_servo_pulse(3, SERVO_SHOULDER_FR_STAND);
-    set_servo_pulse(4, SERVO_SHOULDER_FL_STAND);
-    set_servo_pulse(5, SERVO_SHIN_FL_STAND);
-    set_servo_pulse(6, SERVO_SHOULDER_BL_STAND);
-    set_servo_pulse(7, SERVO_SHIN_BL_STAND);
-    printf("OK stand\n");
-  } else if (strcmp(cmd, "sit") == 0) {
-    /* 蹲下:8 路全 1500(标定基线,腿完全伸直/居中) */
-    for (uint8_t i = 0; i < 8; i++) set_servo_pulse(i, SERVO_NEUTRAL_US);
-    printf("OK sit\n");
-  } else {
-    /* 加回显便于调试 */
-    printf("ERR fmt: '%s'\n", cmd);
-  }
-}
-
-static void uart_poll(void) {
-  uint8_t c;
-  if (HAL_UART_Receive(&huart1, &c, 1, 0) == HAL_OK) {
-    if (c == '\n' || c == '\r') {
-      if (rx_idx > 0) {
-        rx_buf[rx_idx] = 0;
-        parse_uart_command(rx_buf);
-        rx_idx = 0;
-      }
-    } else if (rx_idx < sizeof(rx_buf) - 1) {
-      rx_buf[rx_idx++] = c;
-    }
-  }
-}
+/* 2026-09-14:text 命令解析搬到 commands.c(text 兼容模式),
+ * binary 协议也由 commands.c 处理。这里不再有 parse_uart_command / uart_poll。*/
 /* USER CODE END 0 */
 
 /**
@@ -192,23 +117,38 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C1_Init();
-  MX_TIM1_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
   MX_TIM17_Init();
   MX_USART1_UART_Init();
+  MX_TIM15_Init();
   MX_TIM6_Init();
+  MX_TIM7_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
   /* ⚠️ 2026-09-12 no-reply 修复:禁用 stdout 缓冲
    * 否则 newlib 可能把 printf 输出缓存在 FILE 里,直到 \n 才 flush,
    * 期间如果进程卡死,数据全丢 */
   setvbuf(stdout, NULL, _IONBF, 0);
-  /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit -> 必须手动启动 HAL_TIM_PWM_Start */
+
+  /* 2026-09-16 重构:诊断字符搬到 diagnostic.c(避免 CubeMX Generate Code 丢 })*/
+
+
+  /* === 2026-09-15 BOOT 标识(诊断 STM32 ↔ X3 链路)===
+   * X3 端跑 listen_booted.py 监听 ttyS3,收到 BOOT 说明:
+   *   - STM32 跑到了 main()
+   *   - USART1 TX 通路正常(PA9 输出)
+   * 蜂鸣器(PBeeper 接 PA11)响 = STM32 跑到这里
+   * 8 路被强制设 1500(蹲下 / 腿伸直) = 证明 PWM 输出也正常
+   */
+  /* ⚠️ CubeMX 不自动调 HAL_TIM_PWM_MspPostInit -> 必须手动启动 HAL_TIM_PWM_Start
+   * 注意:set_servo_pulse 必须在 HAL_TIM_PWM_Start 之后 */
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);    /* PA8  = TIM1_CH1 = servo7 */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);    /* PA5  = TIM2_CH1 = servo3 */
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_3);    /* PA2  = TIM2_CH3 = servo0 */
-  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_4);    /* PA3  = TIM2_CH4 = servo1 */
+  HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_1);   /* PA2  = TIM15_CH1 = servo0 */
+  HAL_TIM_PWM_Start(&htim15, TIM_CHANNEL_2);   /* PA3  = TIM15_CH2 = servo1 */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);    /* PA6  = TIM3_CH1 = servo4 */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);    /* PA4  = TIM3_CH2 = servo2 */
   HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);    /* PB0  = TIM3_CH3 = servo6 */
@@ -232,21 +172,29 @@ int main(void)
    */
   stepping_init();
   motion_init();
+  /* 2026-09-14:X3 协议 + 心跳守护 */
+  commands_init();   /* USART1 DMA + IDLE 启动 */
+  watchdog_init();   /* TIM7 1kHz 启动,X3 不发命令 200ms 后自动 STAND */
+
+  /* 上电诊断标记(发 '1' '2' '3' '5' '6' 'B',tabby 看到 = STM32 跑到这步) */
+  diagnostic_init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  diagnostic_mainloop();  /* 发 'C' = 进 main loop */
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* === 主循环(2026-09-13)===
-     * 1) motion_poll():推进动作状态机(无通信模式的关键,负责 start_delay 后启动 trot)
-     * 2) uart_poll():UART 命令接口,后续 X3 上线后仍用这个发命令
+    /* === 主循环(2026-09-14:X3 上线后)===
+     * 1) motion_poll():推进动作状态机
+     * 2) commands_poll():解析 USART1 DMA + IDLE 收到的二进制 / 文本帧
+     * 注:watchdog 由 TIM7 1kHz ISR 驱动,不需要在主循环调
      */
     motion_poll();
-    uart_poll();
+    commands_poll();
   /* USER CODE END 3 */
   }
 }
@@ -267,12 +215,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
   RCC_OscInitStruct.PLL.PLLM = RCC_PLLM_DIV1;
-  RCC_OscInitStruct.PLL.PLLN = 42;
+  RCC_OscInitStruct.PLL.PLLN = 21;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV2;
   RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;

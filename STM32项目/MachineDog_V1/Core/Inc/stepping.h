@@ -51,6 +51,16 @@
 
 #include <stdint.h>
 
+/* === 8 路舵机表(2026-09-14 提到 .h,供 motions.c 也可见)=========== */
+typedef struct {
+  uint16_t stand;      /* STAND PWM */
+  uint8_t  is_right;   /* 1=右腿 (PWM 减 = 收腿),0=左腿 (PWM 增 = 收腿) */
+  uint16_t min;        /* SERVO_LIMIT 下限 */
+  uint16_t max;        /* SERVO_LIMIT 上限 */
+} ServoStep;
+
+extern const ServoStep SERVO_STEP[8];   /* stepping.c 定义 */
+
 /* === 步态状态机 =====================================================*/
 typedef enum {
   STEPPING_IDLE = 0,     /* 待机,所有腿 STAND */
