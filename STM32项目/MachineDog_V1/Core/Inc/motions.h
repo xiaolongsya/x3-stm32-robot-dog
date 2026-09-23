@@ -6,7 +6,7 @@
   *
   * 设计动机:
   *   - 不同动作(站立 / 踏步 / 蹲起循环 / 小腿测试)的代码全部放 motions.c/h 里
-  *   - main.c 只负责:初始化 → 注册动作 → 选一个 → 主循环轮询
+ *   - main.c 只负责:初始化 → 注册动作 → 选一个 → 主循环轮询
   *   - 加新动作:在 MotionTable 末尾加一行 + 写 motion_xxx() 函数,不动 main.c
   *
   * 工作模式:
@@ -32,11 +32,12 @@ extern "C" {
 #include <stdint.h>
 
 /* === 选择要跑的动作(无通信模式默认,改这里切换)=== */
-/* 4 个动作(2026-09-14 整理):
+/* 5 个动作:
  *   MOTION_STAND  - 上电跳 STAND 然后保持(标定/观察用)
  *   MOTION_TROT   - 上电跳 TROT_STAND → start_delay_s 后启动踏步
  *   MOTION_BOB    - 上电跳 STAND → hold 5s → 蹲下 → hold 5s → 循环
  *   MOTION_SHIN_TEST - 8 路同步线性 ramp 测小腿范围(找最大值)
+ *   MOTION_WALK   - 前进/后退,FR→FL→BL→BR 单腿依次摆动
  *
  * 默认 MOTION_STAND(2026-09-14:X3 上线后上电啥都不动,等 X3 命令);
  * 改这里切其他动作(无 X3 时调试用):
@@ -52,6 +53,7 @@ extern "C" {
 #define MOTION_TROT      2
 #define MOTION_BOB       3  /* 站立↔蹲下 循环 */
 #define MOTION_SHIN_TEST 4  /* 小腿范围测试 */
+#define MOTION_WALK      5  /* 前进/后退,方向由 MOTION_PLAY 附加字节指定 */
 
 /* === ACTION_PLAY (0x09) 高级动作 id (2026-09-16 加)== */
 #define ACTION_SIT_DOWN       5   /* 任意 → SIT_REAL 渐进 800ms */
@@ -103,6 +105,9 @@ const char *motion_get_name(void);
  * 实现细节:沿用 motion_init() 的状态机,但允许带运行时参数
  */
 void motion_play_by_id(uint8_t id, uint32_t duration_ms);
+
+/* MOTION_PLAY id=5 专用入口:direction=-1 后退,0 原地 TROT,+1 前进。 */
+void motion_play_walk(int8_t direction, uint32_t duration_ms);
 
 /* === 应用 8 路"标准值" = 跪下姿态(2026-09-17 加)===
  * 含 2 个**物理偏移**(任何姿态下都存在,不只 STAND):

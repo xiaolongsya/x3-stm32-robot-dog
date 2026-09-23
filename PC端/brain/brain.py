@@ -26,6 +26,7 @@ from . import logger
 from .asr import ASRClient
 from .llm import LLMClient
 from .prompts import SYSTEM_PROMPT, build_user_prompt
+from .schema import parse_direct_walk
 
 log = logger.get_logger("brain")
 
@@ -122,20 +123,23 @@ class BrainServer:
             log.warn(f"[ws={ws_id}] ASR 空输出(可能是静音/噪声)")
             return
         log.info(f"[ws={ws_id}] ASR {asr_ms}ms: '{text}'")
-        # 2) LLM
+        # 2) 明确的前进/后退指令直接解析;其余交给 LLM
         t_llm0 = time.time()
-        user_prompt = build_user_prompt(sess.history, text)
-        result = await self.llm.chat(SYSTEM_PROMPT, user_prompt, timeout=LLM_TIMEOUT_S)
+        result = parse_direct_walk(text)
+        if result is None:
+            user_prompt = build_user_prompt(sess.history, text)
+            result = await self.llm.chat(SYSTEM_PROMPT, user_prompt, timeout=LLM_TIMEOUT_S)
         llm_ms = int((time.time() - t_llm0) * 1000)
         actions = result["actions"]
         reply = result["reply"]
         # LLM 解析详情
         actions_short = ", ".join(
             f"{a['cmd']}#{a.get('id','')}" + (f"/{a.get('duration_ms')}ms" if 'duration_ms' in a else "")
+            + (f"/dir={a['direction']}" if 'direction' in a else "")
             for a in actions
         ) or "(空)"
         log.info(
-            f"[ws={ws_id}] LLM  {llm_ms}ms: actions=[{actions_short}] reply='{reply}'"
+            f"[ws={ws_id}] 解析 {llm_ms}ms: actions=[{actions_short}] reply='{reply}'"
         )
         # 3) 历史
         sess.add_turn(text, actions, reply)
@@ -186,8 +190,10 @@ def run_test(wav_path: str):
         return
     log.info(f"ASR: '{text}'")
 
-    user_prompt = build_user_prompt([], text)
-    result = asyncio.run(llm.chat(SYSTEM_PROMPT, user_prompt))
+    result = parse_direct_walk(text)
+    if result is None:
+        user_prompt = build_user_prompt([], text)
+        result = asyncio.run(llm.chat(SYSTEM_PROMPT, user_prompt))
     t1 = time.time()
 
     print("=" * 60)

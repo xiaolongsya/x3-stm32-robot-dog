@@ -68,6 +68,7 @@ extern const ServoStep SERVO_STEP[8];   /* stepping.c 定义 */
 typedef enum {
   STEPPING_IDLE = 0,     /* 待机,所有腿 STAND */
   STEPPING_TROT,         /* 对角小跑步态(原地踏步) */
+  STEPPING_WALK,         /* 单腿依次摆动,其余三腿推动身体 */
 } SteppingState;
 
 /* === 接口 ===========================================================*/
@@ -84,6 +85,9 @@ void stepping_init(void);
  *         - phase=0,swing 腿无偏移,support 腿 STAND(无跳变)
  */
 void stepping_start_trot(void);
+
+/** 启动前进(+1)或后退(-1)步态;dir=0 复用原地 TROT。 */
+void stepping_start_walk(int8_t dir);
 
 /**
  * @brief  停止踏步(主循环调用)

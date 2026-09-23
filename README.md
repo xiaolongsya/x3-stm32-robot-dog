@@ -133,7 +133,7 @@
 
 | cmd | 名称 | data | 备注 |
 |---|---|---|---|
-| `0x01` | MOTION_PLAY | `[id u8, dur_ms u32 LE]` | id 1..4 = STAND/TROT/BOB/SHIN_TEST |
+| `0x01` | MOTION_PLAY | id 1..4:`[id u8, dur_ms u32 LE]`;id 5:`[5, dur_ms u32 LE, direction i8]` | id 5=WALK;direction +1 前进、-1 后退、0 原地踏步 |
 | `0x03` | SET_PWM | `[(id u8, pulse u16 LE) * N]` | 直写 8 路,pulse ∈ [500,2500] |
 | `0x05` | HEARTBEAT | `[]` | 100ms 一发,防 watchdog 200ms 超时 |
 | `0x06` | EMERGENCY_STOP | `[]` | stepping_stop + 回 STAND |
@@ -192,7 +192,7 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 | v1 PCB Layout | ✅ Complete (3 rounds review, 0 blockers) |
 | v1 Fabrication | ✅ Complete |
 | v1 Board Bring-up | ✅ Complete (2026-09-09) |
-| STM32 Firmware | ✅ 站立 + 蹲起循环 + 对角踏步 + X3 协议 + ramp SIT/STAND |
+| STM32 Firmware | ✅ 站立 + 蹲起循环 + 对角踏步 + X3 协议 + ramp SIT/STAND；WALK 前进/后退已实现,待烧录实测 |
 | X3 (KWS + STM32 翻译) | ✅ 上线 (UART ↔ STM32, KWS 双进程, WS PC brain) |
 | PC 大脑 (ASR + LLM) | ✅ 上线 (FunASR + Ollama qwen3:8b,WS @ :8765) |
 | 端到端链路 | ✅ 唤醒 → ASR → LLM → STM32 跑通 (2026-09-16) |
@@ -210,7 +210,7 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
   - STM32CubeMX 9 外设 (TIM1/2/3/15/17 × 8 路 PWM + I2C1 + USART1 + SWD + TIM6/TIM7)
   - SYSCLK = 168 MHz (HSI 16MHz × PLL ×21)
   - `commands.c/h` (2026-09-14) — X3 ↔ STM32 二进制协议 (USART1 DMA + IDLE)
-  - `motions.c/h` (2026-09-14) — 4 动作 (STAND / TROT / BOB / SHIN_TEST) + ramp SIT/STAND 入口
+  - `motions.c/h` — 5 动作 (STAND / TROT / BOB / SHIN_TEST / WALK) + ramp SIT/STAND 入口
   - `stepping.c/h` (2026-09-14) — 对角 trot,8 路同步线性 ramp (TIM6 100Hz ISR)
   - `ramp.c/h` (2026-09-16) — 8 路 PWM 同步渐进 ramp (SIT/STAND 用,主循环调 ramp_tick)
   - `watchdog.c/h` (2026-09-14) — TIM7 1kHz,200ms 无心跳自动回 STAND

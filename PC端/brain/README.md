@@ -20,6 +20,10 @@ X3 ← WS ← {"type":"action", "actions":[...], "reply":"..."}
 STM32 (UART 二进制协议,cmd 0x01/0x06/0x09)
 ```
 
+明确的“前进/后退 N 秒”由 `schema.parse_direct_walk()` 解析为单条
+`MOTION_PLAY id=5`，带 `direction=+1/-1` 和准确的 `duration_ms`；
+这类指令跳过 LLM，避免模型更改时长或追加动作。其余语音仍走 LLM。
+
 ## 文件结构
 
 ```

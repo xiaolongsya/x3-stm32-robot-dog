@@ -8,6 +8,8 @@
     python3 dog_uart.py stand          # 站立(渐进)
     python3 dog_uart.py squat 5        # 蹲下起立循环 5 次
     python3 dog_uart.py trot 10        # 踏步 10 秒
+    python3 dog_uart.py forward 2      # 前进 2 秒(需新版 STM32 固件)
+    python3 dog_uart.py backward 2     # 后退 2 秒(需新版 STM32 固件)
     python3 dog_uart.py bob 15         # 蹲起循环动作 15 秒
     python3 dog_uart.py seq "sit 2; stand 1; squat 3"   # 动作组合
     python3 dog_uart.py stop           # 急停(立即回 STAND)
@@ -173,10 +175,14 @@ class DogLink:
         payload = bytes([action_id, 1]) + struct.pack("<H", min(int(hold_ms), 65535))
         return self.cmd(CMD_ACTION_PLAY, payload)
 
-    def motion(self, motion_id: int, duration_ms: int):
-        """MOTION_PLAY 0x01: [id u8, dur u32 LE]"""
-        return self.cmd(CMD_MOTION_PLAY,
-                        bytes([motion_id]) + struct.pack("<I", duration_ms))
+    def motion(self, motion_id: int, duration_ms: int, direction: int = 0):
+        """MOTION_PLAY: WALK(id=5) 追加有符号 direction 字节。"""
+        payload = bytes([motion_id]) + struct.pack("<I", duration_ms)
+        if motion_id == 5:
+            if direction not in (-1, 0, 1):
+                raise ValueError("WALK direction 必须是 -1, 0 或 1")
+            payload += struct.pack("<b", direction)
+        return self.cmd(CMD_MOTION_PLAY, payload)
 
     def sit(self):
         return self.action(ACTION_SIT_DOWN)
@@ -201,6 +207,9 @@ class DogLink:
 
     def bob(self, seconds=15.0):
         return self.motion(3, int(seconds * 1000))
+
+    def walk(self, direction: int, seconds=5.0):
+        return self.motion(5, int(seconds * 1000), direction)
 
     # 2026-09-16:def beep() 移除,蜂鸣器链路作废
 
@@ -237,6 +246,10 @@ def run_seq(link: DogLink, spec: str):
             sec = float(args[0]) if args else 15.0
             link.bob(sec)
             time.sleep(sec)
+        elif name in ("forward", "backward"):
+            sec = float(args[0]) if args else 5.0
+            link.walk(1 if name == "forward" else -1, sec)
+            time.sleep(sec)
         elif name == "wait":
             time.sleep(float(args[0]) if args else 1.0)
         else:
@@ -259,6 +272,8 @@ def main():
     p.add_argument("hold", type=float, nargs="?", default=1.0)
     p = sub.add_parser("trot");  p.add_argument("sec", type=float, nargs="?", default=10.0)
     p = sub.add_parser("bob");   p.add_argument("sec", type=float, nargs="?", default=15.0)
+    p = sub.add_parser("forward"); p.add_argument("sec", type=float, nargs="?", default=5.0)
+    p = sub.add_parser("backward"); p.add_argument("sec", type=float, nargs="?", default=5.0)
     # 2026-09-16:beep 子命令移除,蜂鸣器链路作废
     p = sub.add_parser("seq");   p.add_argument("spec")
     sub.add_parser("stop")
@@ -278,6 +293,9 @@ def main():
             link.trot(a.sec); time.sleep(a.sec)
         elif a.cmd_name == "bob":
             link.bob(a.sec); time.sleep(a.sec)
+        elif a.cmd_name in ("forward", "backward"):
+            link.walk(1 if a.cmd_name == "forward" else -1, a.sec)
+            time.sleep(a.sec)
         # 2026-09-16:beep 命令移除,蜂鸣器链路作废
         elif a.cmd_name == "seq":
             run_seq(link, a.spec)

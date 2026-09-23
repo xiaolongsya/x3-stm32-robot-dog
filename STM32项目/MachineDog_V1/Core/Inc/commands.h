@@ -17,8 +17,9 @@
   *   status: 0=OK  1=CRC_ERR  2=BAD_CMD  3=BAD_PARAM  4=BAD_LEN
   *
   * 命令集(6 个 + 兼容文本):
-  *   0x01 MOTION_PLAY    data: [id u8, duration_ms u32 LE]
-  *                       id=1..4 → motions 表;duration_ms=0 表示无限(到 HEARTBEAT 停止)
+  *   0x01 MOTION_PLAY    id=1..4: [id u8, duration_ms u32 LE]
+  *                       id=5 WALK: [5, duration_ms u32 LE, direction i8]
+  *                       direction=-1 后退,0 原地 TROT,+1 前进
   *   0x03 SET_PWM        data: [(id u8, pulse u16 LE) * N], N = len/3
   *   0x05 HEARTBEAT      data: []  (仅用于 reset watchdog)
   *   0x06 EMERGENCY_STOP data: []  (立即回 STAND,等价 MOTION_PLAY id=1)

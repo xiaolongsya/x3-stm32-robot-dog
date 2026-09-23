@@ -4,11 +4,12 @@
   * @file    motions.c
   * @brief   机器狗 v1 动作实现(2026-09-14 整理)
   *
-  * 当前 4 个动作(2026-09-14 整理后):
+ * 当前 5 个动作:
   *   - STAND:写 8 路到 SERVO_*_STAND 然后保持(标定/观察)
   *   - TROT:写 8 路到 TROT_STAND,start_delay_s 后启动 stepping,保持到 stop
   *   - BOB:写 8 路到 STAND → hold 5s → 写 8 路到"标准值/跪下"→ hold 5s → 循环
-  *   - SHIN_TEST:8 路同步线性 ramp 测小腿范围(找最大值)
+ *   - SHIN_TEST:8 路同步线性 ramp 测小腿范围(找最大值)
+ *   - WALK:FR→FL→BL→BR 单腿依次摆动,三条支撑腿肩关节推进
   *
   * STAND 值来源:全部从 main.h 的 SERVO_*_STAND 读取(单一真相源)
   *
@@ -169,6 +170,12 @@ static void motion_trot_setup(void) {
   apply_trot_stand();
 }
 
+static int8_t walk_direction = 1;
+
+static void motion_walk_setup(void) {
+  apply_trot_stand();
+}
+
 /* BOB:跳 STAND → hold 5s → 跳"标准值/跪下"→ hold 5s → 循环 */
 static void motion_bob_setup(void) {
   apply_stand();
@@ -198,7 +205,7 @@ static void motion_shin_test_tick(void) { }
 /* TROT:start_delay 后启动 stepping,duration 后停止 */
 static uint32_t trot_started_ms = 0;
 
-static void motion_trot_tick(void) {
+static void motion_gait_tick(void) {
   if (current == NULL) return;
   if (phase != MOTION_PHASE_RUN) return;
 
@@ -206,7 +213,11 @@ static void motion_trot_tick(void) {
 
   if (trot_started_ms == 0u) {
     if ((now - boot_tick_ms) >= (uint32_t)current->start_delay_s * 1000u) {
-      stepping_start_trot();
+      if (current->id == MOTION_WALK) {
+        stepping_start_walk(walk_direction);
+      } else {
+        stepping_start_trot();
+      }
       trot_started_ms = now;
     }
   } else {
@@ -262,9 +273,10 @@ static void motion_bob_tick(void) {
 /* === 注册表(4 个动作,2026-09-14 整理后) =========================*/
 const Motion MOTION_TABLE[] = {
   { MOTION_STAND,     "stand",     motion_stand_setup,     motion_stand_tick,     0,  0   },
-  { MOTION_TROT,      "trot",      motion_trot_setup,      motion_trot_tick,      5,  30 },
+  { MOTION_TROT,      "trot",      motion_trot_setup,      motion_gait_tick,      5,  30 },
   { MOTION_BOB,       "bob",       motion_bob_setup,       motion_bob_tick,       0,  0   },
   { MOTION_SHIN_TEST, "shin_test", motion_shin_test_setup, motion_shin_test_tick, 0,  0   },
+  { MOTION_WALK,      "walk",      motion_walk_setup,      motion_gait_tick,      0,  5   },
   { 0, NULL, NULL, NULL, 0, 0 }  /* 哨兵 */
 };
 
@@ -338,6 +350,16 @@ void motion_play_by_id(uint8_t id, uint32_t duration_ms) {
   /* 应用初始姿态(setup) */
   motion_apply_neutral();   /* 安全起点 */
   if (current->setup) current->setup();
+}
+
+void motion_play_walk(int8_t direction, uint32_t duration_ms) {
+  if (direction == 0) {
+    motion_play_by_id(MOTION_TROT, duration_ms);
+    return;
+  }
+  if (direction != 1 && direction != -1) return;
+  walk_direction = direction;
+  motion_play_by_id(MOTION_WALK, duration_ms);
 }
 
 void motion_init(void) {

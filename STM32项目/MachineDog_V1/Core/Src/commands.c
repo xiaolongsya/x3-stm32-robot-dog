@@ -167,15 +167,23 @@ static void dispatch_frame(const uint8_t *f, uint8_t total_len) {
 
   const uint8_t *d = f + 4;
   switch (cmd) {
-    case 0x01: {  /* MOTION_PLAY: [id u8, duration_ms u32 LE] = 5 bytes */
-      if (len != 5) { commands_send_ack(cmd, 3, NULL, 0); return; }
+    case 0x01: {  /* MOTION_PLAY: id 1..4 用 5B;id 5 追加 direction i8 */
+      if (len != 5 && len != 6) { commands_send_ack(cmd, 3, NULL, 0); return; }
       uint8_t  id = d[0];
       uint32_t dur = (uint32_t)d[1] | ((uint32_t)d[2] << 8)
                     | ((uint32_t)d[3] << 16) | ((uint32_t)d[4] << 24);
-      /* id:1=STAND 2=TROT 3=BOB 4=SHIN_TEST(对 motions.c 表) */
-      if (id < 1 || id > 4) { commands_send_ack(cmd, 3, NULL, 0); return; }
-      /* 直接调对应 motion 的 setup,避开编译时 MOTION_ID */
-      motion_play_by_id(id, dur);
+      if (id < 1 || id > MOTION_WALK || (id == MOTION_WALK) != (len == 6)) {
+        commands_send_ack(cmd, 3, NULL, 0); return;
+      }
+      if (id == MOTION_WALK) {
+        int8_t direction = (int8_t)d[5];
+        if (direction < -1 || direction > 1) {
+          commands_send_ack(cmd, 3, NULL, 0); return;
+        }
+        motion_play_walk(direction, dur);
+      } else {
+        motion_play_by_id(id, dur);
+      }
       commands_send_ack(cmd, 0, NULL, 0);
       watchdog_reset();
       break;

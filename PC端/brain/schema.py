@@ -2,10 +2,11 @@
 """
 2026-09-16 立项:
 - 蜂鸣器命令 0x07/0x08 已废,本文件不包含
-- MOTION_PLAY id=1..4 (motions 表)
+- MOTION_PLAY id=1..5 (5=WALK,需 direction)
 - ACTION_PLAY id=5..8 (渐进 SIT/STAND)
 - EMERGENCY_STOP id=0
 """
+import re
 
 # === STM32 命令码 (commands.c 一致) ===
 CMD_MOTION_PLAY     = 0x01
@@ -37,6 +38,7 @@ ACTION_SCHEMA = {
                     },
                     "id": {"type": "integer", "minimum": 1, "maximum": 9},
                     "duration_ms": {"type": "integer", "minimum": 0, "maximum": 60000},
+                    "direction": {"type": "integer", "minimum": -1, "maximum": 1},
                 },
                 "required": ["cmd"],
             },
@@ -74,13 +76,61 @@ def validate_actions(raw_actions):
             valid.append({"cmd": cmd, "id": int(id_), "duration_ms": int(hold)})
         elif cmd == "MOTION_PLAY":
             id_ = a.get("id")
-            if id_ not in (1, 2, 3, 4):
-                errors.append(f"MOTION_PLAY id={id_} 越界(需 1..4)")
+            if id_ not in (1, 2, 3, 4, 5):
+                errors.append(f"MOTION_PLAY id={id_} 越界(需 1..5)")
                 continue
             duration = a.get("duration_ms", 5000)
             if not isinstance(duration, int) or duration < 0 or duration > 60000:
                 duration = 5000  # 兜底
-            valid.append({"cmd": cmd, "id": int(id_), "duration_ms": int(duration)})
+            action = {"cmd": cmd, "id": int(id_), "duration_ms": int(duration)}
+            if id_ == 5:
+                direction = a.get("direction")
+                if direction not in (-1, 1) or isinstance(direction, bool):
+                    errors.append(f"WALK direction={direction} 非法(需 -1 或 1)")
+                    continue
+                action["direction"] = direction
+            valid.append(action)
         elif cmd == "EMERGENCY_STOP":
             valid.append({"cmd": cmd})
     return valid, errors
+
+
+_WALK_COMMAND = re.compile(
+    r"^\s*(?:小龙[，,]?\s*)?(?:请|帮我)?\s*"
+    r"(前进|向前走|往前走|后退|倒退|向后走|往后走)"
+    r"\s*(?:(\d{1,2}|[一二三四五六七八九十两]{1,3})\s*秒(?:钟)?)?"
+    r"\s*(?:一下|吧)?[。.!！\s]*$"
+)
+_CN_DIGITS = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+              "六": 6, "七": 7, "八": 8, "九": 9}
+
+
+def _walk_seconds(value):
+    if value is None:
+        return 5
+    if value.isdigit():
+        return int(value)
+    if value == "十":
+        return 10
+    if "十" in value:
+        left, right = value.split("十", 1)
+        tens = _CN_DIGITS.get(left, 1) if left else 1
+        ones = _CN_DIGITS.get(right, 0) if right else 0
+        return tens * 10 + ones
+    return _CN_DIGITS.get(value)
+
+
+def parse_direct_walk(text):
+    """明确的前进/后退命令直接转成单条动作,避免 LLM 改时长或追加动作。"""
+    match = _WALK_COMMAND.fullmatch(text or "")
+    if not match:
+        return None
+    seconds = _walk_seconds(match.group(2))
+    if seconds is None or not 1 <= seconds <= 60:
+        return None
+    direction = 1 if match.group(1) in ("前进", "向前走", "往前走") else -1
+    return {
+        "actions": [{"cmd": "MOTION_PLAY", "id": 5,
+                     "duration_ms": seconds * 1000, "direction": direction}],
+        "reply": "好的",
+    }

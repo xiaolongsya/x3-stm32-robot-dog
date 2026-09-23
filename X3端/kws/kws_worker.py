@@ -163,12 +163,13 @@ class KWSWorker:
             elif cmd == "MOTION_PLAY":
                 mid = a.get("id")
                 dur = a.get("duration_ms", 5000)
-                if self.dog.motion(mid, dur):
+                direction = a.get("direction", 0)
+                if self.dog.motion(mid, dur, direction):
                     ok += 1
                 else:
                     fail += 1
                     print(f"[worker] ⚠ MOTION_PLAY #{mid} 发送失败: {self.dog.last_cmd_error}", flush=True)
-                print(f"[worker] stm32 → MOTION_PLAY #{mid} dur={dur}ms", flush=True)
+                print(f"[worker] stm32 → MOTION_PLAY #{mid} dir={direction} dur={dur}ms", flush=True)
                 # MOTION_PLAY 不插 sleep,它的 duration_ms 由 STM32 tick 自动结束
             elif cmd == "EMERGENCY_STOP":
                 if self.dog.emergency_stop():

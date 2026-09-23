@@ -93,6 +93,13 @@ extern TIM_HandleTypeDef htim6;
 /* === 内部计算:phase 每 tick 增量 === */
 #define STEP_T_INC  (1.0f / (STEP_TROT_PERIOD * 100.0f))  /* 自动算:0.6s → 0.0167 */
 
+/* WALK:FR→FL→BL→BR,每腿 250ms;相位两端偏移均为 0。 */
+#define WALK_TICKS_PER_LEG 25u
+#define WALK_CYCLE_TICKS   (4u * WALK_TICKS_PER_LEG)
+#define WALK_LIFT_US       500u
+#define WALK_PUSH_US       150u
+#define WALK_PI            3.14159265f
+
 /* === 8 路舵机抬腿参数表 ==========================================
  *
  * 抬腿方向:右腿 PWM 减,左腿 PWM 增(抬腿 = 小腿向狗头方向倾斜)
@@ -129,6 +136,8 @@ const ServoStep SERVO_STEP[8] = {
 /* === 状态 =========================================================*/
 static volatile SteppingState step_state = STEPPING_IDLE;
 static volatile float step_t_phase = 0.0f;
+static volatile uint8_t walk_tick = 0;
+static volatile int8_t walk_dir = 1;
 
 /* === 调试数据 (ISR 写, main loop 读) ==============================*/
 static volatile float     dbg_phase = 0.0f;
@@ -261,6 +270,38 @@ static void stepping_trot_step(void) {
   dbg_phase = step_t_phase;
 }
 
+/* 每相位一条腿抬起,其余三条腿的肩向行进反方向推。
+ * swing 小腿方向与 TROT 一致;后退时仅反转 support 肩的方向。
+ * sin² 包络在每相位首尾均为 0,切换 swing 腿时无 PWM 台阶。
+ */
+static void stepping_walk_step(void) {
+  static const uint8_t swing_shin[4] = {2, 5, 7, 0}; /* FR FL BL BR */
+  static const uint8_t swing_shoulder[4] = {3, 4, 6, 1};
+  uint8_t leg = walk_tick / WALK_TICKS_PER_LEG;
+  uint8_t tick_in_leg = walk_tick % WALK_TICKS_PER_LEG;
+  float local = (float)tick_in_leg / (float)(WALK_TICKS_PER_LEG - 1u);
+  float wave = sinf(WALK_PI * local);
+  float envelope = wave * wave;
+  int16_t lift = (int16_t)(envelope * (float)WALK_LIFT_US + 0.5f);
+  int16_t push = (int16_t)(envelope * (float)WALK_PUSH_US + 0.5f);
+
+  for (uint8_t id = 0; id < 8; id++) {
+    int16_t pwm = (int16_t)trot_stand_pwm[id];
+    if (id == swing_shin[leg]) {
+      pwm += SERVO_STEP[id].is_right ? -lift : lift;
+    } else if ((id == 1u || id == 3u || id == 4u || id == 6u)
+               && id != swing_shoulder[leg]) {
+      int16_t signed_push = (int16_t)(walk_dir * push);
+      pwm += SERVO_STEP[id].is_right ? -signed_push : signed_push;
+    }
+    uint16_t clamped = stepping_clamp_pwm(id, pwm);
+    set_servo_pulse(id, clamped);
+    dbg_pwm[id] = clamped;
+  }
+  dbg_phase = (float)walk_tick / (float)WALK_CYCLE_TICKS;
+  walk_tick = (uint8_t)((walk_tick + 1u) % WALK_CYCLE_TICKS);
+}
+
 /* === 接口实现 =====================================================*/
 
 void stepping_init(void) {
@@ -288,17 +329,34 @@ void stepping_start_trot(void) {
   }
 }
 
+void stepping_start_walk(int8_t dir) {
+  if (dir == 0) {
+    stepping_start_trot();
+    return;
+  }
+  if ((dir != 1 && dir != -1) || ramp_is_active()) return;
+
+  stepping_apply_trot_stand();
+  walk_dir = dir;
+  walk_tick = 0;
+  step_state = STEPPING_WALK;
+  if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {
+    step_state = STEPPING_IDLE;
+  }
+}
+
 void stepping_stop(void) {
   /* 主循环调用 — 不 printf (2026-09-12 防 printf 阻塞 UART 卡死 main loop) */
   HAL_TIM_Base_Stop_IT(&htim6);
   step_state = STEPPING_IDLE;
   step_t_phase = 0.0f;
+  walk_tick = 0;
   stepping_apply_stand();
 }
 
 void stepping_tick(void) {
   /* ⚠️ TIM6 ISR 调用 — 不能 printf */
-  if (step_state != STEPPING_TROT) return;
+  if (step_state != STEPPING_TROT && step_state != STEPPING_WALK) return;
 
   /* 如果 ramp 活跃，立即停止 stepping（蹲下时踏步必须停） */
   if (ramp_is_active()) {
@@ -306,10 +364,13 @@ void stepping_tick(void) {
     return;
   }
 
-  step_t_phase += STEP_T_INC;
-  if (step_t_phase >= 1.0f) step_t_phase -= 1.0f;
-
-  stepping_trot_step();
+  if (step_state == STEPPING_WALK) {
+    stepping_walk_step();
+  } else {
+    step_t_phase += STEP_T_INC;
+    if (step_t_phase >= 1.0f) step_t_phase -= 1.0f;
+    stepping_trot_step();
+  }
 }
 
 SteppingState stepping_get_state(void) {
