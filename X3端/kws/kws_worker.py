@@ -162,7 +162,7 @@ class KWSWorker:
                 time.sleep(wait_ms / 1000.0)
             elif cmd == "MOTION_PLAY":
                 mid = a.get("id")
-                dur = a.get("duration_ms", 5000)
+                dur = a.get("duration_ms", 8000 if mid == 5 else 5000)
                 direction = a.get("direction", 0)
                 if self.dog.motion(mid, dur, direction):
                     ok += 1

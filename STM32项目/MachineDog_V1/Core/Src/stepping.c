@@ -93,9 +93,11 @@ extern TIM_HandleTypeDef htim6;
 /* === 内部计算:phase 每 tick 增量 === */
 #define STEP_T_INC  (1.0f / (STEP_TROT_PERIOD * 100.0f))  /* 自动算:0.6s → 0.0167 */
 
-/* WALK:FR→FL→BL→BR,每腿 250ms;相位两端偏移均为 0。 */
-#define WALK_TICKS_PER_LEG 25u
+/* WALK:FR→FL→BL→BR,每腿 2s,完整一轮 8s。 */
+#define WALK_TICKS_PER_LEG 200u
 #define WALK_CYCLE_TICKS   (4u * WALK_TICKS_PER_LEG)
+#define WALK_STANCE_TICKS  (WALK_CYCLE_TICKS - WALK_TICKS_PER_LEG)
+#define WALK_RAMP_TICKS    100u
 #define WALK_LIFT_US       500u
 #define WALK_PUSH_US       150u
 #define WALK_PI            3.14159265f
@@ -136,7 +138,8 @@ const ServoStep SERVO_STEP[8] = {
 /* === 状态 =========================================================*/
 static volatile SteppingState step_state = STEPPING_IDLE;
 static volatile float step_t_phase = 0.0f;
-static volatile uint8_t walk_tick = 0;
+static volatile uint16_t walk_tick = 0;
+static volatile uint16_t walk_elapsed_ticks = 0;
 static volatile int8_t walk_dir = 1;
 
 /* === 调试数据 (ISR 写, main loop 读) ==============================*/
@@ -270,36 +273,53 @@ static void stepping_trot_step(void) {
   dbg_phase = step_t_phase;
 }
 
-/* 每相位一条腿抬起,其余三条腿的肩向行进反方向推。
- * swing 小腿方向与 TROT 一致;后退时仅反转 support 肩的方向。
- * sin² 包络在每相位首尾均为 0,切换 swing 腿时无 PWM 台阶。
+/* 每条腿有 2s 摆动、6s 支撑。摆动时抬小腿并将肩向行进方向送脚;
+ * 支撑时小腿落地,肩沿反方向缓慢推地。肩在摆动/支撑边界连续。
+ * 启动前 1s 逐渐增加摆幅,避免从 STAND 突跳到周期中的肩位置。
  */
+static float walk_smoothstep(float t) {
+  return t * t * (3.0f - 2.0f * t);
+}
+
 static void stepping_walk_step(void) {
   static const uint8_t swing_shin[4] = {2, 5, 7, 0}; /* FR FL BL BR */
   static const uint8_t swing_shoulder[4] = {3, 4, 6, 1};
-  uint8_t leg = walk_tick / WALK_TICKS_PER_LEG;
-  uint8_t tick_in_leg = walk_tick % WALK_TICKS_PER_LEG;
-  float local = (float)tick_in_leg / (float)(WALK_TICKS_PER_LEG - 1u);
-  float wave = sinf(WALK_PI * local);
-  float envelope = wave * wave;
-  int16_t lift = (int16_t)(envelope * (float)WALK_LIFT_US + 0.5f);
-  int16_t push = (int16_t)(envelope * (float)WALK_PUSH_US + 0.5f);
+  float ramp = (walk_elapsed_ticks < WALK_RAMP_TICKS)
+                 ? (float)walk_elapsed_ticks / (float)WALK_RAMP_TICKS : 1.0f;
 
-  for (uint8_t id = 0; id < 8; id++) {
-    int16_t pwm = (int16_t)trot_stand_pwm[id];
-    if (id == swing_shin[leg]) {
-      pwm += SERVO_STEP[id].is_right ? -lift : lift;
-    } else if ((id == 1u || id == 3u || id == 4u || id == 6u)
-               && id != swing_shoulder[leg]) {
-      int16_t signed_push = (int16_t)(walk_dir * push);
-      pwm += SERVO_STEP[id].is_right ? -signed_push : signed_push;
+  for (uint8_t leg = 0; leg < 4; leg++) {
+    uint16_t phase = (uint16_t)((walk_tick + WALK_CYCLE_TICKS
+                         - (uint16_t)leg * WALK_TICKS_PER_LEG) % WALK_CYCLE_TICKS);
+    uint8_t shin_id = swing_shin[leg];
+    uint8_t shoulder_id = swing_shoulder[leg];
+    int16_t lift = 0;
+    float shoulder_pos;
+    if (phase < WALK_TICKS_PER_LEG) {
+      float t = (float)phase / (float)(WALK_TICKS_PER_LEG - 1u);
+      float wave = sinf(WALK_PI * t);
+      lift = (int16_t)(wave * wave * (float)WALK_LIFT_US * ramp + 0.5f);
+      shoulder_pos = -1.0f + 2.0f * walk_smoothstep(t);
+    } else {
+      float t = (float)(phase - WALK_TICKS_PER_LEG)
+                / (float)(WALK_STANCE_TICKS - 1u);
+      shoulder_pos = 1.0f - 2.0f * walk_smoothstep(t);
     }
-    uint16_t clamped = stepping_clamp_pwm(id, pwm);
-    set_servo_pulse(id, clamped);
-    dbg_pwm[id] = clamped;
+
+    int16_t signed_shoulder = (int16_t)(shoulder_pos * (float)WALK_PUSH_US
+                                        * (float)walk_dir * ramp);
+    int16_t shin_pwm = (int16_t)SERVO_STEP[shin_id].stand
+                       + (SERVO_STEP[shin_id].is_right ? -lift : lift);
+    int16_t shoulder_pwm = (int16_t)SERVO_STEP[shoulder_id].stand
+                           + (SERVO_STEP[shoulder_id].is_right
+                              ? signed_shoulder : -signed_shoulder);
+    dbg_pwm[shin_id] = stepping_clamp_pwm(shin_id, shin_pwm);
+    dbg_pwm[shoulder_id] = stepping_clamp_pwm(shoulder_id, shoulder_pwm);
+    set_servo_pulse(shin_id, dbg_pwm[shin_id]);
+    set_servo_pulse(shoulder_id, dbg_pwm[shoulder_id]);
   }
   dbg_phase = (float)walk_tick / (float)WALK_CYCLE_TICKS;
-  walk_tick = (uint8_t)((walk_tick + 1u) % WALK_CYCLE_TICKS);
+  walk_tick = (uint16_t)((walk_tick + 1u) % WALK_CYCLE_TICKS);
+  if (walk_elapsed_ticks < WALK_RAMP_TICKS) walk_elapsed_ticks++;
 }
 
 /* === 接口实现 =====================================================*/
@@ -336,9 +356,10 @@ void stepping_start_walk(int8_t dir) {
   }
   if ((dir != 1 && dir != -1) || ramp_is_active()) return;
 
-  stepping_apply_trot_stand();
+  stepping_apply_stand();
   walk_dir = dir;
   walk_tick = 0;
+  walk_elapsed_ticks = 0;
   step_state = STEPPING_WALK;
   if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {
     step_state = STEPPING_IDLE;
@@ -351,6 +372,7 @@ void stepping_stop(void) {
   step_state = STEPPING_IDLE;
   step_t_phase = 0.0f;
   walk_tick = 0;
+  walk_elapsed_ticks = 0;
   stepping_apply_stand();
 }
 

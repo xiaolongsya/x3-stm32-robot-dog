@@ -79,9 +79,10 @@ def validate_actions(raw_actions):
             if id_ not in (1, 2, 3, 4, 5):
                 errors.append(f"MOTION_PLAY id={id_} 越界(需 1..5)")
                 continue
-            duration = a.get("duration_ms", 5000)
+            default_duration = 8000 if id_ == 5 else 5000
+            duration = a.get("duration_ms", default_duration)
             if not isinstance(duration, int) or duration < 0 or duration > 60000:
-                duration = 5000  # 兜底
+                duration = default_duration  # 兜底
             action = {"cmd": cmd, "id": int(id_), "duration_ms": int(duration)}
             if id_ == 5:
                 direction = a.get("direction")
@@ -107,7 +108,7 @@ _CN_DIGITS = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
 
 def _walk_seconds(value):
     if value is None:
-        return 5
+        return 8
     if value.isdigit():
         return int(value)
     if value == "十":

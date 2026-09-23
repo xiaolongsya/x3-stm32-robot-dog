@@ -173,7 +173,7 @@ static void motion_trot_setup(void) {
 static int8_t walk_direction = 1;
 
 static void motion_walk_setup(void) {
-  apply_trot_stand();
+  apply_stand();
 }
 
 /* BOB:跳 STAND → hold 5s → 跳"标准值/跪下"→ hold 5s → 循环 */
@@ -276,7 +276,7 @@ const Motion MOTION_TABLE[] = {
   { MOTION_TROT,      "trot",      motion_trot_setup,      motion_gait_tick,      5,  30 },
   { MOTION_BOB,       "bob",       motion_bob_setup,       motion_bob_tick,       0,  0   },
   { MOTION_SHIN_TEST, "shin_test", motion_shin_test_setup, motion_shin_test_tick, 0,  0   },
-  { MOTION_WALK,      "walk",      motion_walk_setup,      motion_gait_tick,      0,  5   },
+  { MOTION_WALK,      "walk",      motion_walk_setup,      motion_gait_tick,      0,  8   },
   { 0, NULL, NULL, NULL, 0, 0 }  /* 哨兵 */
 };
 

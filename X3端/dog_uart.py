@@ -8,8 +8,8 @@
     python3 dog_uart.py stand          # 站立(渐进)
     python3 dog_uart.py squat 5        # 蹲下起立循环 5 次
     python3 dog_uart.py trot 10        # 踏步 10 秒
-    python3 dog_uart.py forward 2      # 前进 2 秒(需新版 STM32 固件)
-    python3 dog_uart.py backward 2     # 后退 2 秒(需新版 STM32 固件)
+    python3 dog_uart.py forward 8      # 前进一轮约 8 秒(需新版 STM32 固件)
+    python3 dog_uart.py backward 8     # 后退一轮约 8 秒(需新版 STM32 固件)
     python3 dog_uart.py bob 15         # 蹲起循环动作 15 秒
     python3 dog_uart.py seq "sit 2; stand 1; squat 3"   # 动作组合
     python3 dog_uart.py stop           # 急停(立即回 STAND)
@@ -208,7 +208,7 @@ class DogLink:
     def bob(self, seconds=15.0):
         return self.motion(3, int(seconds * 1000))
 
-    def walk(self, direction: int, seconds=5.0):
+    def walk(self, direction: int, seconds=8.0):
         return self.motion(5, int(seconds * 1000), direction)
 
     # 2026-09-16:def beep() 移除,蜂鸣器链路作废
@@ -247,7 +247,7 @@ def run_seq(link: DogLink, spec: str):
             link.bob(sec)
             time.sleep(sec)
         elif name in ("forward", "backward"):
-            sec = float(args[0]) if args else 5.0
+            sec = float(args[0]) if args else 8.0
             link.walk(1 if name == "forward" else -1, sec)
             time.sleep(sec)
         elif name == "wait":
@@ -272,8 +272,8 @@ def main():
     p.add_argument("hold", type=float, nargs="?", default=1.0)
     p = sub.add_parser("trot");  p.add_argument("sec", type=float, nargs="?", default=10.0)
     p = sub.add_parser("bob");   p.add_argument("sec", type=float, nargs="?", default=15.0)
-    p = sub.add_parser("forward"); p.add_argument("sec", type=float, nargs="?", default=5.0)
-    p = sub.add_parser("backward"); p.add_argument("sec", type=float, nargs="?", default=5.0)
+    p = sub.add_parser("forward"); p.add_argument("sec", type=float, nargs="?", default=8.0)
+    p = sub.add_parser("backward"); p.add_argument("sec", type=float, nargs="?", default=8.0)
     # 2026-09-16:beep 子命令移除,蜂鸣器链路作废
     p = sub.add_parser("seq");   p.add_argument("spec")
     sub.add_parser("stop")

@@ -192,7 +192,7 @@ This project is licensed under the **MIT License** — see [`LICENSE`](LICENSE).
 | v1 PCB Layout | ✅ Complete (3 rounds review, 0 blockers) |
 | v1 Fabrication | ✅ Complete |
 | v1 Board Bring-up | ✅ Complete (2026-09-09) |
-| STM32 Firmware | ✅ 站立 + 蹲起循环 + 对角踏步 + X3 协议 + ramp SIT/STAND；WALK 前进/后退已实现,待烧录实测 |
+| STM32 Firmware | ✅ 站立 + 蹲起循环 + 对角踏步 + X3 协议 + ramp SIT/STAND；WALK 前进/后退为单腿 2 秒、四腿 8 秒慢速步态,待烧录实测 |
 | X3 (KWS + STM32 翻译) | ✅ 上线 (UART ↔ STM32, KWS 双进程, WS PC brain) |
 | PC 大脑 (ASR + LLM) | ✅ 上线 (FunASR + Ollama qwen3:8b,WS @ :8765) |
 | 端到端链路 | ✅ 唤醒 → ASR → LLM → STM32 跑通 (2026-09-16) |
