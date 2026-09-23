@@ -93,13 +93,13 @@ extern TIM_HandleTypeDef htim6;
 /* === 内部计算:phase 每 tick 增量 === */
 #define STEP_T_INC  (1.0f / (STEP_TROT_PERIOD * 100.0f))  /* 自动算:0.6s → 0.0167 */
 
-/* WALK:FR→FL→BL→BR,每腿 2s,完整一轮 8s。 */
+/* WALK:FR→FL→BL→BR,每腿 1s 摆动 + 1s 全脚推地,完整一轮 8s。 */
 #define WALK_TICKS_PER_LEG 200u
 #define WALK_CYCLE_TICKS   (4u * WALK_TICKS_PER_LEG)
-#define WALK_STANCE_TICKS  (WALK_CYCLE_TICKS - WALK_TICKS_PER_LEG)
-#define WALK_RAMP_TICKS    100u
+#define WALK_SWING_TICKS   (WALK_TICKS_PER_LEG / 2u)
+#define WALK_PUSH_TICKS    (WALK_TICKS_PER_LEG - WALK_SWING_TICKS)
 #define WALK_LIFT_US       500u
-#define WALK_PUSH_US       150u
+#define WALK_STRIDE_US     150u
 #define WALK_PI            3.14159265f
 
 /* === 8 路舵机抬腿参数表 ==========================================
@@ -139,7 +139,6 @@ const ServoStep SERVO_STEP[8] = {
 static volatile SteppingState step_state = STEPPING_IDLE;
 static volatile float step_t_phase = 0.0f;
 static volatile uint16_t walk_tick = 0;
-static volatile uint16_t walk_elapsed_ticks = 0;
 static volatile int8_t walk_dir = 1;
 
 /* === 调试数据 (ISR 写, main loop 读) ==============================*/
@@ -273,9 +272,10 @@ static void stepping_trot_step(void) {
   dbg_phase = step_t_phase;
 }
 
-/* 每条腿有 2s 摆动、6s 支撑。摆动时抬小腿并将肩向行进方向送脚;
- * 支撑时小腿落地,肩沿反方向缓慢推地。肩在摆动/支撑边界连续。
- * 启动前 1s 逐渐增加摆幅,避免从 STAND 突跳到周期中的肩位置。
+/* 每条腿 1s 摆动 + 1s 全脚推地。
+ * 摆动时只动目标腿,另外三条腿保持当前位置;小腿收起、肩向前送脚。
+ * 落脚后四条小腿保持 STAND,四个肩同时向后推 1/4 步幅。
+ * 一轮中每个肩向前回摆一次、向后推地四次,周期首尾都回 STAND。
  */
 static float walk_smoothstep(float t) {
   return t * t * (3.0f - 2.0f * t);
@@ -284,29 +284,32 @@ static float walk_smoothstep(float t) {
 static void stepping_walk_step(void) {
   static const uint8_t swing_shin[4] = {2, 5, 7, 0}; /* FR FL BL BR */
   static const uint8_t swing_shoulder[4] = {3, 4, 6, 1};
-  float ramp = (walk_elapsed_ticks < WALK_RAMP_TICKS)
-                 ? (float)walk_elapsed_ticks / (float)WALK_RAMP_TICKS : 1.0f;
-
+  uint8_t active_leg = (uint8_t)(walk_tick / WALK_TICKS_PER_LEG);
+  uint16_t local_tick = walk_tick % WALK_TICKS_PER_LEG;
+  uint8_t swinging = local_tick < WALK_SWING_TICKS;
+  float progress = swinging
+      ? (float)local_tick / (float)(WALK_SWING_TICKS - 1u)
+      : (float)(local_tick - WALK_SWING_TICKS) / (float)(WALK_PUSH_TICKS - 1u);
+  float eased = walk_smoothstep(progress);
   for (uint8_t leg = 0; leg < 4; leg++) {
-    uint16_t phase = (uint16_t)((walk_tick + WALK_CYCLE_TICKS
-                         - (uint16_t)leg * WALK_TICKS_PER_LEG) % WALK_CYCLE_TICKS);
     uint8_t shin_id = swing_shin[leg];
     uint8_t shoulder_id = swing_shoulder[leg];
     int16_t lift = 0;
-    float shoulder_pos;
-    if (phase < WALK_TICKS_PER_LEG) {
-      float t = (float)phase / (float)(WALK_TICKS_PER_LEG - 1u);
-      float wave = sinf(WALK_PI * t);
-      lift = (int16_t)(wave * wave * (float)WALK_LIFT_US * ramp + 0.5f);
-      shoulder_pos = -1.0f + 2.0f * walk_smoothstep(t);
+    /* 已经回摆的肩有 +1 步幅,每个已完成相位都给四肩 -1/4 步幅。 */
+    float shoulder_us = (leg < active_leg || (!swinging && leg == active_leg)
+                         ? (float)WALK_STRIDE_US : 0.0f)
+        - (float)active_leg * (float)WALK_STRIDE_US / 4.0f;
+    if (swinging) {
+      if (leg == active_leg) {
+        float wave = sinf(WALK_PI * progress);
+        lift = (int16_t)(wave * wave * (float)WALK_LIFT_US + 0.5f);
+        shoulder_us += (float)WALK_STRIDE_US * eased;
+      }
     } else {
-      float t = (float)(phase - WALK_TICKS_PER_LEG)
-                / (float)(WALK_STANCE_TICKS - 1u);
-      shoulder_pos = 1.0f - 2.0f * walk_smoothstep(t);
+      shoulder_us -= (float)WALK_STRIDE_US / 4.0f * eased;
     }
 
-    int16_t signed_shoulder = (int16_t)(shoulder_pos * (float)WALK_PUSH_US
-                                        * (float)walk_dir * ramp);
+    int16_t signed_shoulder = (int16_t)(shoulder_us * (float)walk_dir);
     int16_t shin_pwm = (int16_t)SERVO_STEP[shin_id].stand
                        + (SERVO_STEP[shin_id].is_right ? -lift : lift);
     int16_t shoulder_pwm = (int16_t)SERVO_STEP[shoulder_id].stand
@@ -319,7 +322,6 @@ static void stepping_walk_step(void) {
   }
   dbg_phase = (float)walk_tick / (float)WALK_CYCLE_TICKS;
   walk_tick = (uint16_t)((walk_tick + 1u) % WALK_CYCLE_TICKS);
-  if (walk_elapsed_ticks < WALK_RAMP_TICKS) walk_elapsed_ticks++;
 }
 
 /* === 接口实现 =====================================================*/
@@ -359,7 +361,6 @@ void stepping_start_walk(int8_t dir) {
   stepping_apply_stand();
   walk_dir = dir;
   walk_tick = 0;
-  walk_elapsed_ticks = 0;
   step_state = STEPPING_WALK;
   if (HAL_TIM_Base_Start_IT(&htim6) != HAL_OK) {
     step_state = STEPPING_IDLE;
@@ -372,7 +373,6 @@ void stepping_stop(void) {
   step_state = STEPPING_IDLE;
   step_t_phase = 0.0f;
   walk_tick = 0;
-  walk_elapsed_ticks = 0;
   stepping_apply_stand();
 }
 

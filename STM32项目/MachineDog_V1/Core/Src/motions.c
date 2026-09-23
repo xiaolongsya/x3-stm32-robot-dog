@@ -9,7 +9,7 @@
   *   - TROT:写 8 路到 TROT_STAND,start_delay_s 后启动 stepping,保持到 stop
   *   - BOB:写 8 路到 STAND → hold 5s → 写 8 路到"标准值/跪下"→ hold 5s → 循环
  *   - SHIN_TEST:8 路同步线性 ramp 测小腿范围(找最大值)
- *   - WALK:FR→FL→BL→BR 单腿依次摆动,三条支撑腿肩关节推进
+ *   - WALK:FR→FL→BL→BR,每腿先摆动再四脚推地
   *
   * STAND 值来源:全部从 main.h 的 SERVO_*_STAND 读取(单一真相源)
   *
