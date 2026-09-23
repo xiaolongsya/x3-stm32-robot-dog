@@ -127,3 +127,20 @@ python3 /root/kws/kws_record_send.py --pc-url ws://192.168.160.91:8765
 - `72503f0` — kws_listener.py + start_kws_dual.sh(KWS 常驻)
 - `9bee03e` — kws_worker.py(业务进程,复用 DogLink)
 - `e6c6ca5` — 标 kws_record_send.py 为 deprecated
+
+## 单腿离地诊断
+
+前进步态若出现机身朝摆动腿倾倒，先停止 WALK。托住机身、让四脚不承重，且确认
+`kws_worker.py` 未占用串口，然后在 X3 上逐条运行：
+
+```bash
+python3 /root/kws/leg_lift_diagnostic.py FR --supported
+python3 /root/kws/leg_lift_diagnostic.py FL --supported
+python3 /root/kws/leg_lift_diagnostic.py BL --supported
+python3 /root/kws/leg_lift_diagnostic.py BR --supported
+```
+
+脚本只移动指定小腿，从 STAND 缓慢收腿 300us、保持 1 秒、再返回 STAND；
+其他三条腿不推地。观察小腿转向、脚端是否上移、有无卡滞或舵机无力。
+运行中按 Ctrl+C 会发送急停并回 STAND。若 300us 看不清，可加
+`--amplitude 500`，仅在机身被托住时使用。
