@@ -87,7 +87,7 @@ class KWSWorker:
         self.dog = DogLink(port, baud, heartbeat=True)  # 100ms heartbeat 自动起
         self.pc_url = pc_url
         self.socket_path = socket_path
-        self.state = "idle"   # "idle" / "busy"
+        self.state = "idle"   # "idle" / "awaiting_recording" / "busy"
         self.sock: socket.socket | None = None
 
     # === socket 连接管理 ===
@@ -245,11 +245,11 @@ class KWSWorker:
         self.send_ready()
 
     def handle_wake(self, msg: dict):
-        """收到 wake_detected → 切 busy (score 仅日志)"""
+        """收到 wake_detected → 等待同一句的 recording_done"""
         score = msg.get("score", 0.0)
         rms = msg.get("rms", 0)
         print(f"[worker] wake score={score:.3f} rms={rms}", flush=True)
-        self.state = "busy"
+        self.state = "awaiting_recording"
 
     # === 主循环 ===
     def run(self):
@@ -268,7 +268,7 @@ class KWSWorker:
 
                 mtype = msg.get("type")
                 if mtype == "wake_detected":
-                    if self.state == "busy":
+                    if self.state != "idle":
                         # worker 还在处理上一个 utterance,丢弃本次 wake
                         print(
                             f"[worker] busy, drop wake score={msg.get('score',0):.2f}",
@@ -277,14 +277,11 @@ class KWSWorker:
                         continue
                     self.handle_wake(msg)
                 elif mtype == "recording_done":
-                    # 2026-09-16 修 H4:busy 状态拒绝第二条 recording_done
-                    # 根因:用户连说两句话时,前一句的 actions 还没发完 STM32,
-                    #   第二条 recording_done 触发新的 handle_recording_done,
-                    #   asyncio.run 把前一个 event loop 中断,actions 列表后半段丢失
-                    # 修复:busy 时直接 drop,不进入 handle_recording_done
-                    if self.state == "busy":
+                    # wake 后的第一条 recording_done 属于当前语句,必须处理。
+                    # 仅拒绝没有对应 wake 的录音或重复录音。
+                    if self.state != "awaiting_recording":
                         print(
-                            "[worker] busy, drop recording_done (前一句还没处理完)",
+                            f"[worker] drop recording_done (state={self.state})",
                             flush=True,
                         )
                         continue
