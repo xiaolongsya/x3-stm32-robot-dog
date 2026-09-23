@@ -144,3 +144,13 @@ python3 /root/kws/leg_lift_diagnostic.py BR --supported
 其他三条腿不推地。观察小腿转向、脚端是否上移、有无卡滞或舵机无力。
 运行中按 Ctrl+C 会发送急停并回 STAND。若 300us 看不清，可加
 `--amplitude 500`，仅在机身被托住时使用。
+
+两段式步态刷入 STM32 后，可手扶机身运行单轮测试：
+
+```bash
+python3 -u /root/kws/test_phased_walk.py --supported
+```
+
+脚本先回 STAND、倒数 3 秒，再发一轮 8 秒 WALK，按 1 秒间隔打印预计阶段；
+结束或按 Ctrl+C 时发急停回 STAND。阶段提示来自固件时间表，不代表实测脚位。
+`--direction backward` 可测后退；前进承重稳定前先不测后退。
