@@ -1,9 +1,9 @@
-# desktop-quadruped
+# X3 STM32 Robot Dog
 
 > A 4-legged robot dog for your desk: STM32G431 direct 8-servo drive,
 > fully open-source hardware (KiCad schematic + 80×80 PCB + Gerbers) and firmware.
 
-![Status](https://img.shields.io/badge/status-v1%20debugging-yellow)
+![Status](https://img.shields.io/badge/status-working%20prototype-green)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Hardware](https://img.shields.io/badge/hardware-open--source-orange)
 
@@ -48,7 +48,7 @@
 └────────────────────────────────────────────────────────┘
 ```
 
-完整链路图 + 每跳数据格式见 [`🧠 链路与协议](#-链路与协议)`](#-链路与协议) 章节。
+完整链路图与每跳数据格式见下面的「链路与协议」章节。
 
 > Earlier revisions used Orange Pi Zero3 as the high-level MCU; it was retired in 2026-09 due to UART RX issues + performance limits. Sunset X3 2.0 is the current pick.
 > KWS 早期是单进程 `kws_record_send.py`,2026-09-16 重构为双进程根除 openWakeWord stateful buffer 二次唤醒。
@@ -76,7 +76,6 @@
 
 ## 📚 Documentation
 
-- [`CLAUDE.md`](CLAUDE.md) — AI 协作规则 + 项目速览(开发者入口)
 - [`运动学参数.md`](运动学参数.md) — 几何参数 + 远场近似
 - [`机器狗v1控制板_投板前审查报告.md`](机器狗v1控制板_投板前审查报告.md) — 3 轮审查 + 5 个 critical 修复
 - [`网表/`](网表/) — 立创 EDA 网表
@@ -173,7 +172,7 @@ cd PC端/brain && ./run.ps1    # Windows; bash: ./run.sh
 
 ## 🤝 Contributing
 
-PRs welcome! See [`CLAUDE.md`](CLAUDE.md) for project rules and conventions.
+欢迎提交 Issue 与 Pull Request。请保持硬件参数、协议说明和固件实现同步更新。
 
 ## 📄 License
 
